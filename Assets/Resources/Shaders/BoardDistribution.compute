@@ -1,0 +1,79 @@
+#pragma kernel CSMain
+
+struct StonePlacement
+{
+	float2 position;
+	float strength;
+};
+
+RWTexture2D<float4> _Output;
+
+StructuredBuffer<StonePlacement> _Player0Stones;
+StructuredBuffer<StonePlacement> _Player1Stones;
+StructuredBuffer<StonePlacement> _Player2Stones;
+StructuredBuffer<StonePlacement> _Player3Stones;
+
+int _Player0StoneCount;
+int _Player1StoneCount;
+int _Player2StoneCount;
+int _Player3StoneCount;
+
+float _BoardSize;
+float _StoneVariance;
+
+float GaussianContribution(float2 boardPosition, float2 center, float strength, float inverseDoubleVariance)
+{
+	float2 delta = boardPosition - center;
+	float distanceSquared = dot(delta, delta);
+	return strength * exp(-distanceSquared * inverseDoubleVariance);
+}
+
+float AccumulateDensity(float2 boardPosition, StructuredBuffer<StonePlacement> stones, int stoneCount)
+{
+	float density = 0.0;
+	float inverseDoubleVariance = 0.5 / _StoneVariance;
+
+	for(int index = 0; index < stoneCount; ++index)
+	{
+		StonePlacement stone = stones[index];
+		float2 center = stone.position;
+		density += GaussianContribution(boardPosition, center, stone.strength, inverseDoubleVariance);
+
+		float rightX = 2.0 * _BoardSize - center.x;
+		float topY = 2.0 * _BoardSize - center.y;
+
+		density += GaussianContribution(boardPosition, float2(-center.x, center.y), stone.strength, inverseDoubleVariance);
+		density += GaussianContribution(boardPosition, float2(rightX, center.y), stone.strength, inverseDoubleVariance);
+		density += GaussianContribution(boardPosition, float2(center.x, -center.y), stone.strength, inverseDoubleVariance);
+		density += GaussianContribution(boardPosition, float2(center.x, topY), stone.strength, inverseDoubleVariance);
+
+		density += GaussianContribution(boardPosition, float2(-center.x, -center.y), stone.strength, inverseDoubleVariance);
+		density += GaussianContribution(boardPosition, float2(-center.x, topY), stone.strength, inverseDoubleVariance);
+		density += GaussianContribution(boardPosition, float2(rightX, -center.y), stone.strength, inverseDoubleVariance);
+		density += GaussianContribution(boardPosition, float2(rightX, topY), stone.strength, inverseDoubleVariance);
+	}
+
+	return density;
+}
+
+[numthreads(8, 8, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+	uint width;
+	uint height;
+	_Output.GetDimensions(width, height);
+	if(id.x >= width || id.y >= height)
+		return;
+
+	float2 uv = (float2(id.xy) + 0.5) / float2(width, height);
+	float2 boardPosition = uv * _BoardSize;
+
+	float4 density = float4(
+		AccumulateDensity(boardPosition, _Player0Stones, _Player0StoneCount),
+		AccumulateDensity(boardPosition, _Player1Stones, _Player1StoneCount),
+		AccumulateDensity(boardPosition, _Player2Stones, _Player2StoneCount),
+		AccumulateDensity(boardPosition, _Player3Stones, _Player3StoneCount)
+	);
+
+	_Output[id.xy] = density;
+}
