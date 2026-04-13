@@ -97,7 +97,7 @@ public class BoardState
 			return false;
 		}
 
-		if(position.x < 0 || position.x > Size || position.y < 0 || position.y > Size)
+		if(position.x < 0 || position.x >= Size || position.y < 0 || position.y >= Size)
 		{
 			newState = null;
 			return false;

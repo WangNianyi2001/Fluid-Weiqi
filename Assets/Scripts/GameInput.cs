@@ -36,6 +36,15 @@ public class GameInput : MonoBehaviour
 		}
 
 		Vector2 logicalPosition = game.Board.WorldToLogicalPosition(hit.point);
+		bool freePlace = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+		if(!freePlace)
+		{
+			float maxCoord = game.Board.Size - 1;
+			logicalPosition = new Vector2(
+				Mathf.Clamp(Mathf.Round(logicalPosition.x), 0, maxCoord),
+				Mathf.Clamp(Mathf.Round(logicalPosition.y), 0, maxCoord)
+			);
+		}
 		bool needPreviewRefresh = !hasPreviewPosition || (logicalPosition - lastPreviewPosition).sqrMagnitude > PreviewPositionEpsilon;
 		if(needPreviewRefresh)
 		{

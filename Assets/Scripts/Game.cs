@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System;
 
 [RequireComponent(typeof(GameInput))]
 public class Game : MonoBehaviour
@@ -12,10 +13,15 @@ public class Game : MonoBehaviour
 	public int CurrentPlayerIndex => currentPlayerIndex;
 	public Board Board => board;
 	public BoardState State => board.State;
+	public event Action StateCommitted;
+	public event Action<int> TurnChanged;
 
 	void Start()
 	{
+		currentPlayerIndex = Mathf.Clamp(currentPlayerIndex, 0, board.PlayerCount - 1);
 		board.RefreshRendering();
+		StateCommitted?.Invoke();
+		TurnChanged?.Invoke(currentPlayerIndex);
 	}
 
 	public bool TryPlaceStone(Vector2 logicalPosition, float strength = 1)
@@ -57,6 +63,8 @@ public class Game : MonoBehaviour
 		previewState = null;
 
 		currentPlayerIndex = (currentPlayerIndex + 1) % board.PlayerCount;
+		StateCommitted?.Invoke();
+		TurnChanged?.Invoke(currentPlayerIndex);
 		return true;
 	}
 
@@ -112,5 +120,10 @@ public class Game : MonoBehaviour
 					renderState.RemoveStoneAt(player, stoneIndex);
 			}
 		}
+	}
+
+	public int[] GetPlayerAreaPixels()
+	{
+		return board.GetPlayerAreaPixelsByDominance();
 	}
 }

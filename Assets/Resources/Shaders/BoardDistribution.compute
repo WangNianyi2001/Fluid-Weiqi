@@ -1,5 +1,7 @@
 #pragma kernel CSDistribution
 #pragma kernel CSTerritory
+#pragma kernel CSClearAreaPixelCounts
+#pragma kernel CSAccumulateAreaPixelCounts
 #pragma kernel CSInitLabels
 #pragma kernel CSPropagateLabels
 #pragma kernel CSClearChainStats
@@ -25,6 +27,7 @@ RWStructuredBuffer<int> _OwnerBuffer;
 RWStructuredBuffer<int> _LabelBufferRead;
 RWStructuredBuffer<int> _LabelBufferWrite;
 RWStructuredBuffer<int> _CclChangedBuffer;
+RWStructuredBuffer<int> _AreaPixelCountBuffer;
 RWStructuredBuffer<int> _ChainOwnerBuffer;
 RWStructuredBuffer<int> _ChainPixelCountBuffer;
 RWStructuredBuffer<int> _ChainHasLibertyBuffer;
@@ -38,6 +41,7 @@ int _Player3StoneCount;
 float _BoardSize;
 float _StoneVariance;
 float _Threshold;
+float _AreaEpsilon;
 int _PlayerCount;
 int _TextureWidth;
 int _TextureHeight;
@@ -170,6 +174,53 @@ void CSTerritory(uint3 id : SV_DispatchThreadID)
 	float4 color = GetPlayerColor(owner);
 	color.a = 1;
 	_TerritoryOutput[coord] = color;
+}
+
+[numthreads(1, 1, 1)]
+void CSClearAreaPixelCounts(uint3 id : SV_DispatchThreadID)
+{
+	if(id.x != 0 || id.y != 0 || id.z != 0)
+		return;
+
+	for(int player = 0; player < _PlayerCount; ++player)
+		_AreaPixelCountBuffer[player] = 0;
+}
+
+[numthreads(8, 8, 1)]
+void CSAccumulateAreaPixelCounts(uint3 id : SV_DispatchThreadID)
+{
+	uint width = (uint)_TextureWidth;
+	uint height = (uint)_TextureHeight;
+	if(id.x >= width || id.y >= height)
+		return;
+
+	int2 coord = int2(id.xy);
+	float4 density = _DistributionInput[coord];
+	float totalDensity = density.x + density.y + density.z + density.w;
+	if(totalDensity <= _AreaEpsilon)
+		return;
+
+	float maxDensity = density.x;
+	int owner = 0;
+
+	if(density.y > maxDensity)
+	{
+		maxDensity = density.y;
+		owner = 1;
+	}
+	if(density.z > maxDensity)
+	{
+		maxDensity = density.z;
+		owner = 2;
+	}
+	if(density.w > maxDensity)
+	{
+		maxDensity = density.w;
+		owner = 3;
+	}
+
+	if(owner >= 0 && owner < _PlayerCount)
+		InterlockedAdd(_AreaPixelCountBuffer[owner], 1);
 }
 
 [numthreads(8, 8, 1)]

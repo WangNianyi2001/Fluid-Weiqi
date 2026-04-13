@@ -38,6 +38,7 @@ public class Board : MonoBehaviour
 	const float GizmoHeightScale = 0.1f;
 	const int MaxCclIterations = ComputeTextureSize * ComputeTextureSize;
 	const int ThreadGroupSize = 8;
+	const float AreaEpsilon = 1e-6f;
 	#endregion
 
 	#region Inspector
@@ -52,6 +53,7 @@ public class Board : MonoBehaviour
 	#region Properties
 	public Renderer BoardRenderer => renderer;
 	public IReadOnlyList<Color> PlayerColors => playerColors;
+	public int ComputeResolution => ComputeTextureSize;
 	public int PlayerCount
 	{
 		get => playerCount;
@@ -85,6 +87,7 @@ public class Board : MonoBehaviour
 	ComputeShader distributionShader;
 	Shader displayShader;
 	ComputeBuffer ownerBuffer;
+	ComputeBuffer areaPixelCountBuffer;
 	ComputeBuffer labelBufferA;
 	ComputeBuffer labelBufferB;
 	ComputeBuffer activeLabelBuffer;
@@ -97,6 +100,8 @@ public class Board : MonoBehaviour
 
 	int distributionKernel;
 	int territoryKernel;
+	int clearAreaPixelCountsKernel;
+	int accumulateAreaPixelCountsKernel;
 	int cclInitKernel;
 	int cclPropagateKernel;
 	int clearChainStatsKernel;
@@ -110,6 +115,8 @@ public class Board : MonoBehaviour
 		distributionShader = Resources.Load<ComputeShader>(DistributionShaderResourcePath);
 		distributionKernel = distributionShader.FindKernel("CSDistribution");
 		territoryKernel = distributionShader.FindKernel("CSTerritory");
+		clearAreaPixelCountsKernel = distributionShader.FindKernel("CSClearAreaPixelCounts");
+		accumulateAreaPixelCountsKernel = distributionShader.FindKernel("CSAccumulateAreaPixelCounts");
 		cclInitKernel = distributionShader.FindKernel("CSInitLabels");
 		cclPropagateKernel = distributionShader.FindKernel("CSPropagateLabels");
 		clearChainStatsKernel = distributionShader.FindKernel("CSClearChainStats");
@@ -153,6 +160,9 @@ public class Board : MonoBehaviour
 
 		ownerBuffer?.Release();
 		ownerBuffer = null;
+
+		areaPixelCountBuffer?.Release();
+		areaPixelCountBuffer = null;
 
 		labelBufferA?.Release();
 		labelBufferA = null;
@@ -250,6 +260,7 @@ public class Board : MonoBehaviour
 	{
 		RenderDistributionMap(state, distributionMap);
 		RenderTerritoryMap(state, distributionMap, territoryMap);
+		RunDominantAreaStats(state, distributionMap);
 		RunConnectedComponents();
 		RunChainStats();
 
@@ -275,7 +286,7 @@ public class Board : MonoBehaviour
 		try
 		{
 			distributionShader.SetTexture(distributionKernel, "_DistributionOutput", rt);
-			distributionShader.SetFloat("_BoardSize", state.Size);
+			distributionShader.SetFloat("_BoardSize", state.Size - 1);
 			distributionShader.SetFloat("_StoneVariance", Mathf.Max(0.0001f, state.StoneVariance));
 			distributionShader.SetInt("_TextureWidth", rt.width);
 			distributionShader.SetInt("_TextureHeight", rt.height);
@@ -336,6 +347,22 @@ public class Board : MonoBehaviour
 		distributionShader.Dispatch(territoryKernel, groupsX, groupsY, 1);
 	}
 
+	void RunDominantAreaStats(BoardState state, Texture distributionTexture)
+	{
+		distributionShader.SetInt("_TextureWidth", ComputeTextureSize);
+		distributionShader.SetInt("_TextureHeight", ComputeTextureSize);
+		distributionShader.SetInt("_PlayerCount", state.PlayerCount);
+		distributionShader.SetFloat("_AreaEpsilon", AreaEpsilon);
+		distributionShader.SetBuffer(clearAreaPixelCountsKernel, "_AreaPixelCountBuffer", areaPixelCountBuffer);
+		distributionShader.Dispatch(clearAreaPixelCountsKernel, 1, 1, 1);
+
+		distributionShader.SetTexture(accumulateAreaPixelCountsKernel, "_DistributionInput", distributionTexture);
+		distributionShader.SetBuffer(accumulateAreaPixelCountsKernel, "_AreaPixelCountBuffer", areaPixelCountBuffer);
+		int groupsX = Mathf.CeilToInt(ComputeTextureSize / (float)ThreadGroupSize);
+		int groupsY = Mathf.CeilToInt(ComputeTextureSize / (float)ThreadGroupSize);
+		distributionShader.Dispatch(accumulateAreaPixelCountsKernel, groupsX, groupsY, 1);
+	}
+
 	void RunConnectedComponents()
 	{
 		distributionShader.SetInt("_TextureWidth", ComputeTextureSize);
@@ -393,6 +420,20 @@ public class Board : MonoBehaviour
 		distributionShader.SetBuffer(accumulateChainStatsKernel, "_ChainPixelCountBuffer", chainPixelCountBuffer);
 		distributionShader.SetBuffer(accumulateChainStatsKernel, "_ChainHasLibertyBuffer", chainLibertyBuffer);
 		distributionShader.Dispatch(accumulateChainStatsKernel, groupsX, groupsY, 1);
+	}
+
+	public int[] GetPlayerAreaPixelsByDominance()
+	{
+		int[] areaByPlayer = new int[PlayerCount];
+		if(areaPixelCountBuffer == null)
+			return areaByPlayer;
+
+		int[] raw = new int[MaxPlayers];
+		areaPixelCountBuffer.GetData(raw);
+		for(int i = 0; i < areaByPlayer.Length; ++i)
+			areaByPlayer[i] = raw[i];
+
+		return areaByPlayer;
 	}
 
 	public List<ChainStat> GetChainStats()
@@ -542,6 +583,7 @@ public class Board : MonoBehaviour
 	{
 		int pixelCount = ComputeTextureSize * ComputeTextureSize;
 		ownerBuffer = new ComputeBuffer(pixelCount, sizeof(int));
+		areaPixelCountBuffer = new ComputeBuffer(MaxPlayers, sizeof(int));
 		labelBufferA = new ComputeBuffer(pixelCount, sizeof(int));
 		labelBufferB = new ComputeBuffer(pixelCount, sizeof(int));
 		cclChangedBuffer = new ComputeBuffer(1, sizeof(int));
@@ -554,13 +596,14 @@ public class Board : MonoBehaviour
 
 	int LogicalPositionToPixelIndex(BoardState renderState, Vector2 logicalPosition)
 	{
-		if(logicalPosition.x < 0 || logicalPosition.x > renderState.Size)
+		float span = renderState.Size - 1;
+		if(logicalPosition.x < 0 || logicalPosition.x > span)
 			return -1;
-		if(logicalPosition.y < 0 || logicalPosition.y > renderState.Size)
+		if(logicalPosition.y < 0 || logicalPosition.y > span)
 			return -1;
 
-		float normalizedX = Mathf.Clamp01(logicalPosition.x / renderState.Size);
-		float normalizedY = Mathf.Clamp01(logicalPosition.y / renderState.Size);
+		float normalizedX = Mathf.Clamp01(logicalPosition.x / span);
+		float normalizedY = Mathf.Clamp01(logicalPosition.y / span);
 		int pixelX = Mathf.Clamp(Mathf.RoundToInt(normalizedX * (ComputeTextureSize - 1)), 0, ComputeTextureSize - 1);
 		int pixelY = Mathf.Clamp(Mathf.RoundToInt(normalizedY * (ComputeTextureSize - 1)), 0, ComputeTextureSize - 1);
 		return pixelY * ComputeTextureSize + pixelX;
@@ -588,14 +631,16 @@ public class Board : MonoBehaviour
 	public Vector2 WorldToLogicalPosition(Vector3 worldPosition)
 	{
 		Vector3 localPosition = transform.InverseTransformPoint(worldPosition);
-		return new Vector2((localPosition.x + .5f) * State.Size, (localPosition.y + .5f) * State.Size);
+		float span = State.Size - 1;
+		return new Vector2((localPosition.x + .5f) * span, (localPosition.y + .5f) * span);
 	}
 
 	public Vector3 LogicalToWorldPosition(Vector2 logicalPosition)
 	{
+		float span = State.Size - 1;
 		Vector3 localPosition = new(
-			logicalPosition.x / State.Size - .5f,
-			logicalPosition.y / State.Size - .5f,
+			logicalPosition.x / span - .5f,
+			logicalPosition.y / span - .5f,
 			0
 		);
 		return transform.TransformPoint(localPosition);
@@ -603,7 +648,7 @@ public class Board : MonoBehaviour
 
 	float LogicalToLocalScale(float logicalLength)
 	{
-		return logicalLength / State.Size;
+		return logicalLength / (State.Size - 1);
 	}
 	#endregion
 
