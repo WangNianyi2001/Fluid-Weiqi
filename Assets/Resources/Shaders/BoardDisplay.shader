@@ -4,6 +4,7 @@ Shader "FluidWeiqi/BoardDisplay"
 	{
 		_DistributionMap ("Distribution Map", 2D) = "black" {}
 		_Threshold ("Threshold", Float) = 0.35355339
+		_BlurStrength ("Blur Strength", Range(0, 1)) = 0.6
 		_PlayerColor0 ("Player Color 0", Color) = (0, 0, 0, 1)
 		_PlayerColor1 ("Player Color 1", Color) = (1, 1, 1, 1)
 		_PlayerColor2 ("Player Color 2", Color) = (0.8, 0.2, 0.2, 1)
@@ -37,7 +38,9 @@ Shader "FluidWeiqi/BoardDisplay"
 			};
 
 			sampler2D _DistributionMap;
+			float4 _DistributionMap_TexelSize;
 			float _Threshold;
+			float _BlurStrength;
 			float4 _PlayerColor0;
 			float4 _PlayerColor1;
 			float4 _PlayerColor2;
@@ -62,9 +65,28 @@ Shader "FluidWeiqi/BoardDisplay"
 				return _PlayerColor3;
 			}
 
+			float4 SampleSmoothedDensity(float2 uv)
+			{
+				float2 px = _DistributionMap_TexelSize.xy;
+
+				float4 c = tex2D(_DistributionMap, uv) * 0.25;
+				float4 n = tex2D(_DistributionMap, uv + float2(0, px.y)) * 0.125;
+				float4 s = tex2D(_DistributionMap, uv - float2(0, px.y)) * 0.125;
+				float4 e = tex2D(_DistributionMap, uv + float2(px.x, 0)) * 0.125;
+				float4 w = tex2D(_DistributionMap, uv - float2(px.x, 0)) * 0.125;
+				float4 ne = tex2D(_DistributionMap, uv + float2(px.x, px.y)) * 0.0625;
+				float4 nw = tex2D(_DistributionMap, uv + float2(-px.x, px.y)) * 0.0625;
+				float4 se = tex2D(_DistributionMap, uv + float2(px.x, -px.y)) * 0.0625;
+				float4 sw = tex2D(_DistributionMap, uv + float2(-px.x, -px.y)) * 0.0625;
+
+				float4 blurred = c + n + s + e + w + ne + nw + se + sw;
+				float4 raw = tex2D(_DistributionMap, uv);
+				return lerp(raw, blurred, _BlurStrength);
+			}
+
 			fixed4 frag(v2f input) : SV_Target
 			{
-				float4 density = tex2D(_DistributionMap, input.uv);
+				float4 density = SampleSmoothedDensity(input.uv);
 				float totalDensity = density.x + density.y + density.z + density.w;
 				float maxValue = density.x;
 				int bestPlayer = 0;

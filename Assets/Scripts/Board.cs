@@ -1,14 +1,43 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
 public class Board : MonoBehaviour
 {
+	[StructLayout(LayoutKind.Sequential)]
+	struct GpuChainStat
+	{
+		public int rootLabel;
+		public int owner;
+		public int pixelCount;
+		public int hasLiberty;
+	}
+
+	public readonly struct ChainStat
+	{
+		public ChainStat(int rootLabel, int owner, int pixelCount, bool hasLiberty)
+		{
+			RootLabel = rootLabel;
+			Owner = owner;
+			PixelCount = pixelCount;
+			HasLiberty = hasLiberty;
+		}
+
+		public int RootLabel { get; }
+		public int Owner { get; }
+		public int PixelCount { get; }
+		public bool HasLiberty { get; }
+	}
+
 	#region Constants
 	const int MaxPlayers = 4;
-	const int TextureSize = 1024;
+	const int RenderTextureSize = 1024;
+	const int ComputeTextureSize = 128;
 	const string DistributionShaderResourcePath = "Shaders/BoardDistribution";
 	const string DisplayShaderResourcePath = "Shaders/BoardDisplay";
 	const float GizmoHeightScale = 0.1f;
+	const int MaxCclIterations = ComputeTextureSize * ComputeTextureSize;
+	const int ThreadGroupSize = 8;
 	#endregion
 
 	#region Inspector
@@ -52,26 +81,54 @@ public class Board : MonoBehaviour
 	Material displayMaterial;
 	RenderTexture mainTexture;
 	RenderTexture distributionMap;
+	RenderTexture territoryMap;
 	ComputeShader distributionShader;
 	Shader displayShader;
+	ComputeBuffer ownerBuffer;
+	ComputeBuffer labelBufferA;
+	ComputeBuffer labelBufferB;
+	ComputeBuffer activeLabelBuffer;
+	ComputeBuffer cclChangedBuffer;
+	ComputeBuffer chainOwnerBuffer;
+	ComputeBuffer chainPixelCountBuffer;
+	ComputeBuffer chainLibertyBuffer;
+	ComputeBuffer compactChainStatBuffer;
+	ComputeBuffer compactChainStatCountBuffer;
+
+	int distributionKernel;
+	int territoryKernel;
+	int cclInitKernel;
+	int cclPropagateKernel;
+	int clearChainStatsKernel;
+	int accumulateChainStatsKernel;
+	int compactChainStatsKernel;
 	#endregion
 
 	#region Unity life cycle
 	protected void Awake()
 	{
 		distributionShader = Resources.Load<ComputeShader>(DistributionShaderResourcePath);
+		distributionKernel = distributionShader.FindKernel("CSDistribution");
+		territoryKernel = distributionShader.FindKernel("CSTerritory");
+		cclInitKernel = distributionShader.FindKernel("CSInitLabels");
+		cclPropagateKernel = distributionShader.FindKernel("CSPropagateLabels");
+		clearChainStatsKernel = distributionShader.FindKernel("CSClearChainStats");
+		accumulateChainStatsKernel = distributionShader.FindKernel("CSAccumulateChainStats");
+		compactChainStatsKernel = distributionShader.FindKernel("CSCompactChainStats");
 		displayShader = Resources.Load<Shader>(DisplayShaderResourcePath);
 
-		mainTexture = RenderTexture.GetTemporary(CreateMainTextureDescriptor());
-		mainTexture.wrapMode = TextureWrapMode.Clamp;
-		mainTexture.filterMode = FilterMode.Bilinear;
+		mainTexture = CreateRenderTexture(CreateMainTextureDescriptor());
+		distributionMap = CreateRenderTexture(CreateDistributionMapDescriptor());
+		territoryMap = CreateRenderTexture(CreateTerritoryMapDescriptor());
+		AllocateConnectivityBuffers();
 
 		material = new(renderer.sharedMaterial);
 		renderer.material = material;
 		ConfigureMaterialForTransparency(material);
 		material.mainTexture = mainTexture;
 
-		displayMaterial = new(displayShader);
+		if(displayShader != null)
+			displayMaterial = new Material(displayShader);
 	}
 
 	protected void OnDestroy()
@@ -90,11 +147,38 @@ public class Board : MonoBehaviour
 			displayMaterial = null;
 		}
 
-		if(mainTexture != null)
-		{
-			RenderTexture.ReleaseTemporary(mainTexture);
-			mainTexture = null;
-		}
+		ReleaseRenderTexture(ref mainTexture);
+		ReleaseRenderTexture(ref distributionMap);
+		ReleaseRenderTexture(ref territoryMap);
+
+		ownerBuffer?.Release();
+		ownerBuffer = null;
+
+		labelBufferA?.Release();
+		labelBufferA = null;
+
+		labelBufferB?.Release();
+		labelBufferB = null;
+
+		cclChangedBuffer?.Release();
+		cclChangedBuffer = null;
+
+		chainOwnerBuffer?.Release();
+		chainOwnerBuffer = null;
+
+		chainPixelCountBuffer?.Release();
+		chainPixelCountBuffer = null;
+
+		chainLibertyBuffer?.Release();
+		chainLibertyBuffer = null;
+
+		compactChainStatBuffer?.Release();
+		compactChainStatBuffer = null;
+
+		compactChainStatCountBuffer?.Release();
+		compactChainStatCountBuffer = null;
+
+		activeLabelBuffer = null;
 	}
 
 	protected void Start()
@@ -147,7 +231,7 @@ public class Board : MonoBehaviour
 
 	public void RefreshRendering(BoardState renderState)
 	{
-		if(mainTexture == null || renderState == null)
+		if(mainTexture == null || territoryMap == null || renderState == null)
 			return;
 
 		RenderState(renderState);
@@ -164,35 +248,44 @@ public class Board : MonoBehaviour
 	#region Rendering
 	void RenderState(BoardState state)
 	{
-		distributionMap = RenderTexture.GetTemporary(CreateDistributionMapDescriptor());
-		distributionMap.wrapMode = TextureWrapMode.Clamp;
-		distributionMap.filterMode = FilterMode.Bilinear;
-
 		RenderDistributionMap(state, distributionMap);
-		UpdateDisplayMaterial(state, distributionMap);
-		Graphics.Blit(null, mainTexture, displayMaterial);
+		RenderTerritoryMap(state, distributionMap, territoryMap);
+		RunConnectedComponents();
+		RunChainStats();
 
-		RenderTexture.ReleaseTemporary(distributionMap);
-		distributionMap = null;
+		if(displayMaterial != null)
+		{
+			displayMaterial.SetTexture("_DistributionMap", distributionMap);
+			displayMaterial.SetFloat("_Threshold", state.Threshold);
+			for(int player = 0; player < MaxPlayers; ++player)
+			{
+				Color playerColor = player < playerColors.Length ? playerColors[player] : Color.magenta;
+				displayMaterial.SetColor($"_PlayerColor{player}", playerColor);
+			}
+			Graphics.Blit(distributionMap, mainTexture, displayMaterial);
+		}
+		else
+			Graphics.Blit(distributionMap, mainTexture);
 	}
 
 	void RenderDistributionMap(BoardState state, RenderTexture rt)
 	{
-		int kernel = distributionShader.FindKernel("CSMain");
 		ComputeBuffer[] stoneBuffers = new ComputeBuffer[MaxPlayers];
 
 		try
 		{
-			distributionShader.SetTexture(kernel, "_Output", rt);
+			distributionShader.SetTexture(distributionKernel, "_DistributionOutput", rt);
 			distributionShader.SetFloat("_BoardSize", state.Size);
 			distributionShader.SetFloat("_StoneVariance", Mathf.Max(0.0001f, state.StoneVariance));
+			distributionShader.SetInt("_TextureWidth", rt.width);
+			distributionShader.SetInt("_TextureHeight", rt.height);
 
 			for(int player = 0; player < MaxPlayers; ++player)
 			{
 				int stoneCount = player < state.PlayerCount ? state.GetStones(player).Count : 0;
 				stoneBuffers[player] = new ComputeBuffer(Mathf.Max(1, stoneCount), 3 * sizeof(float));
 				distributionShader.SetInt($"_Player{player}StoneCount", stoneCount);
-				distributionShader.SetBuffer(kernel, $"_Player{player}Stones", stoneBuffers[player]);
+				distributionShader.SetBuffer(distributionKernel, $"_Player{player}Stones", stoneBuffers[player]);
 
 				if(stoneCount == 0)
 					continue;
@@ -211,9 +304,9 @@ public class Board : MonoBehaviour
 				stoneBuffers[player].SetData(gpuStones);
 			}
 
-			int groupsX = Mathf.CeilToInt(rt.width / 8f);
-			int groupsY = Mathf.CeilToInt(rt.height / 8f);
-			distributionShader.Dispatch(kernel, groupsX, groupsY, 1);
+			int groupsX = Mathf.CeilToInt(rt.width / (float)ThreadGroupSize);
+			int groupsY = Mathf.CeilToInt(rt.height / (float)ThreadGroupSize);
+			distributionShader.Dispatch(distributionKernel, groupsX, groupsY, 1);
 		}
 		finally
 		{
@@ -222,10 +315,176 @@ public class Board : MonoBehaviour
 		}
 	}
 
+	void RenderTerritoryMap(BoardState state, RenderTexture distributionTexture, RenderTexture targetTerritory)
+	{
+		distributionShader.SetTexture(territoryKernel, "_DistributionInput", distributionTexture);
+		distributionShader.SetTexture(territoryKernel, "_TerritoryOutput", targetTerritory);
+		distributionShader.SetBuffer(territoryKernel, "_OwnerBuffer", ownerBuffer);
+		distributionShader.SetInt("_TextureWidth", targetTerritory.width);
+		distributionShader.SetInt("_TextureHeight", targetTerritory.height);
+		distributionShader.SetInt("_PlayerCount", state.PlayerCount);
+		distributionShader.SetFloat("_Threshold", state.Threshold);
+
+		for(int player = 0; player < MaxPlayers; ++player)
+		{
+			Color playerColor = player < playerColors.Length ? playerColors[player] : Color.magenta;
+			distributionShader.SetVector($"_PlayerColor{player}", playerColor);
+		}
+
+		int groupsX = Mathf.CeilToInt(targetTerritory.width / (float)ThreadGroupSize);
+		int groupsY = Mathf.CeilToInt(targetTerritory.height / (float)ThreadGroupSize);
+		distributionShader.Dispatch(territoryKernel, groupsX, groupsY, 1);
+	}
+
+	void RunConnectedComponents()
+	{
+		distributionShader.SetInt("_TextureWidth", ComputeTextureSize);
+		distributionShader.SetInt("_TextureHeight", ComputeTextureSize);
+		distributionShader.SetBuffer(cclInitKernel, "_OwnerBuffer", ownerBuffer);
+		distributionShader.SetBuffer(cclInitKernel, "_LabelBufferWrite", labelBufferA);
+
+		int groupsX = Mathf.CeilToInt(ComputeTextureSize / (float)ThreadGroupSize);
+		int groupsY = Mathf.CeilToInt(ComputeTextureSize / (float)ThreadGroupSize);
+		distributionShader.Dispatch(cclInitKernel, groupsX, groupsY, 1);
+
+		ComputeBuffer readBuffer = labelBufferA;
+		ComputeBuffer writeBuffer = labelBufferB;
+		int[] changed = new int[1];
+		for(int i = 0; i < MaxCclIterations; ++i)
+		{
+			changed[0] = 0;
+			cclChangedBuffer.SetData(changed);
+
+			distributionShader.SetBuffer(cclPropagateKernel, "_OwnerBuffer", ownerBuffer);
+			distributionShader.SetBuffer(cclPropagateKernel, "_LabelBufferRead", readBuffer);
+			distributionShader.SetBuffer(cclPropagateKernel, "_LabelBufferWrite", writeBuffer);
+			distributionShader.SetBuffer(cclPropagateKernel, "_CclChangedBuffer", cclChangedBuffer);
+			distributionShader.Dispatch(cclPropagateKernel, groupsX, groupsY, 1);
+
+			(readBuffer, writeBuffer) = (writeBuffer, readBuffer);
+
+			cclChangedBuffer.GetData(changed);
+			if(changed[0] == 0)
+				break;
+		}
+
+		activeLabelBuffer = readBuffer;
+	}
+
+	void RunChainStats()
+	{
+		if(activeLabelBuffer == null)
+			return;
+
+		distributionShader.SetInt("_TextureWidth", ComputeTextureSize);
+		distributionShader.SetInt("_TextureHeight", ComputeTextureSize);
+
+		int groupsX = Mathf.CeilToInt(ComputeTextureSize / (float)ThreadGroupSize);
+		int groupsY = Mathf.CeilToInt(ComputeTextureSize / (float)ThreadGroupSize);
+
+		distributionShader.SetBuffer(clearChainStatsKernel, "_ChainOwnerBuffer", chainOwnerBuffer);
+		distributionShader.SetBuffer(clearChainStatsKernel, "_ChainPixelCountBuffer", chainPixelCountBuffer);
+		distributionShader.SetBuffer(clearChainStatsKernel, "_ChainHasLibertyBuffer", chainLibertyBuffer);
+		distributionShader.Dispatch(clearChainStatsKernel, groupsX, groupsY, 1);
+
+		distributionShader.SetBuffer(accumulateChainStatsKernel, "_OwnerBuffer", ownerBuffer);
+		distributionShader.SetBuffer(accumulateChainStatsKernel, "_LabelBufferRead", activeLabelBuffer);
+		distributionShader.SetBuffer(accumulateChainStatsKernel, "_ChainOwnerBuffer", chainOwnerBuffer);
+		distributionShader.SetBuffer(accumulateChainStatsKernel, "_ChainPixelCountBuffer", chainPixelCountBuffer);
+		distributionShader.SetBuffer(accumulateChainStatsKernel, "_ChainHasLibertyBuffer", chainLibertyBuffer);
+		distributionShader.Dispatch(accumulateChainStatsKernel, groupsX, groupsY, 1);
+	}
+
+	public List<ChainStat> GetChainStats()
+	{
+		List<ChainStat> chainStats = new();
+		if(activeLabelBuffer == null)
+			return chainStats;
+
+		compactChainStatBuffer.SetCounterValue(0);
+		distributionShader.SetInt("_TextureWidth", ComputeTextureSize);
+		distributionShader.SetInt("_TextureHeight", ComputeTextureSize);
+		distributionShader.SetBuffer(compactChainStatsKernel, "_OwnerBuffer", ownerBuffer);
+		distributionShader.SetBuffer(compactChainStatsKernel, "_LabelBufferRead", activeLabelBuffer);
+		distributionShader.SetBuffer(compactChainStatsKernel, "_ChainOwnerBuffer", chainOwnerBuffer);
+		distributionShader.SetBuffer(compactChainStatsKernel, "_ChainPixelCountBuffer", chainPixelCountBuffer);
+		distributionShader.SetBuffer(compactChainStatsKernel, "_ChainHasLibertyBuffer", chainLibertyBuffer);
+		distributionShader.SetBuffer(compactChainStatsKernel, "_CompactChainStatBuffer", compactChainStatBuffer);
+
+		int groupsX = Mathf.CeilToInt(ComputeTextureSize / (float)ThreadGroupSize);
+		int groupsY = Mathf.CeilToInt(ComputeTextureSize / (float)ThreadGroupSize);
+		distributionShader.Dispatch(compactChainStatsKernel, groupsX, groupsY, 1);
+
+		ComputeBuffer.CopyCount(compactChainStatBuffer, compactChainStatCountBuffer, 0);
+		int[] countArray = new int[1];
+		compactChainStatCountBuffer.GetData(countArray);
+		int chainCount = countArray[0];
+		if(chainCount <= 0)
+			return chainStats;
+
+		GpuChainStat[] gpuStats = new GpuChainStat[chainCount];
+		compactChainStatBuffer.GetData(gpuStats, 0, 0, chainCount);
+		for(int i = 0; i < chainCount; ++i)
+		{
+			GpuChainStat gpuStat = gpuStats[i];
+			chainStats.Add(new ChainStat(gpuStat.rootLabel, gpuStat.owner, gpuStat.pixelCount, gpuStat.hasLiberty != 0));
+		}
+
+		return chainStats;
+	}
+
+	public int GetChainLabelAtLogicalPosition(BoardState renderState, Vector2 logicalPosition)
+	{
+		if(activeLabelBuffer == null || renderState == null)
+			return -1;
+
+		int pixelIndex = LogicalPositionToPixelIndex(renderState, logicalPosition);
+		if(pixelIndex < 0)
+			return -1;
+
+		int[] label = new int[1];
+		activeLabelBuffer.GetData(label, 0, pixelIndex, 1);
+		return label[0];
+	}
+
+	public bool IsOccupiedAtLogicalPosition(BoardState renderState, Vector2 logicalPosition)
+	{
+		if(ownerBuffer == null || renderState == null)
+			return false;
+
+		int pixelIndex = LogicalPositionToPixelIndex(renderState, logicalPosition);
+		if(pixelIndex < 0)
+			return false;
+
+		int[] owner = new int[1];
+		ownerBuffer.GetData(owner, 0, pixelIndex, 1);
+		return owner[0] >= 0;
+	}
+
+	public List<List<int>> GetStoneChainLabels(BoardState renderState)
+	{
+		List<List<int>> labelsByPlayer = new();
+		if(activeLabelBuffer == null || renderState == null)
+			return labelsByPlayer;
+
+		for(int player = 0; player < renderState.PlayerCount; ++player)
+		{
+			IReadOnlyList<StonePlacement> stones = renderState.GetStones(player);
+			List<int> playerLabels = new(stones.Count);
+			for(int i = 0; i < stones.Count; ++i)
+				playerLabels.Add(GetChainLabelAtLogicalPosition(renderState, stones[i].position));
+
+			labelsByPlayer.Add(playerLabels);
+		}
+
+		return labelsByPlayer;
+	}
+
 	RenderTextureDescriptor CreateMainTextureDescriptor()
 	{
-		return new RenderTextureDescriptor(TextureSize, TextureSize, RenderTextureFormat.ARGB32, 0)
+		return new RenderTextureDescriptor(RenderTextureSize, RenderTextureSize, RenderTextureFormat.ARGB32, 0)
 		{
+			enableRandomWrite = false,
 			sRGB = QualitySettings.activeColorSpace == ColorSpace.Linear,
 			msaaSamples = 1,
 			useMipMap = false,
@@ -235,7 +494,7 @@ public class Board : MonoBehaviour
 
 	RenderTextureDescriptor CreateDistributionMapDescriptor()
 	{
-		return new RenderTextureDescriptor(TextureSize, TextureSize, RenderTextureFormat.ARGBFloat, 0)
+		return new RenderTextureDescriptor(ComputeTextureSize, ComputeTextureSize, RenderTextureFormat.ARGBFloat, 0)
 		{
 			enableRandomWrite = true,
 			sRGB = false,
@@ -245,16 +504,66 @@ public class Board : MonoBehaviour
 		};
 	}
 
-	void UpdateDisplayMaterial(BoardState state, Texture distributionTexture)
+	RenderTextureDescriptor CreateTerritoryMapDescriptor()
 	{
-		displayMaterial.SetTexture("_DistributionMap", distributionTexture);
-		displayMaterial.SetFloat("_Threshold", state.Threshold);
-
-		for(int player = 0; player < MaxPlayers; ++player)
+		return new RenderTextureDescriptor(ComputeTextureSize, ComputeTextureSize, RenderTextureFormat.ARGB32, 0)
 		{
-			Color playerColor = player < playerColors.Length ? playerColors[player] : Color.magenta;
-			displayMaterial.SetColor($"_PlayerColor{player}", playerColor);
-		}
+			enableRandomWrite = true,
+			sRGB = QualitySettings.activeColorSpace == ColorSpace.Linear,
+			msaaSamples = 1,
+			useMipMap = false,
+			autoGenerateMips = false,
+		};
+	}
+
+	RenderTexture CreateRenderTexture(RenderTextureDescriptor descriptor)
+	{
+		RenderTexture rt = new(descriptor)
+		{
+			wrapMode = TextureWrapMode.Clamp,
+			filterMode = FilterMode.Bilinear,
+		};
+		rt.Create();
+		return rt;
+	}
+
+	void ReleaseRenderTexture(ref RenderTexture rt)
+	{
+		if(rt == null)
+			return;
+
+		if(rt.IsCreated())
+			rt.Release();
+		Destroy(rt);
+		rt = null;
+	}
+
+	void AllocateConnectivityBuffers()
+	{
+		int pixelCount = ComputeTextureSize * ComputeTextureSize;
+		ownerBuffer = new ComputeBuffer(pixelCount, sizeof(int));
+		labelBufferA = new ComputeBuffer(pixelCount, sizeof(int));
+		labelBufferB = new ComputeBuffer(pixelCount, sizeof(int));
+		cclChangedBuffer = new ComputeBuffer(1, sizeof(int));
+		chainOwnerBuffer = new ComputeBuffer(pixelCount, sizeof(int));
+		chainPixelCountBuffer = new ComputeBuffer(pixelCount, sizeof(int));
+		chainLibertyBuffer = new ComputeBuffer(pixelCount, sizeof(int));
+		compactChainStatBuffer = new ComputeBuffer(pixelCount, 4 * sizeof(int), ComputeBufferType.Append);
+		compactChainStatCountBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
+	}
+
+	int LogicalPositionToPixelIndex(BoardState renderState, Vector2 logicalPosition)
+	{
+		if(logicalPosition.x < 0 || logicalPosition.x > renderState.Size)
+			return -1;
+		if(logicalPosition.y < 0 || logicalPosition.y > renderState.Size)
+			return -1;
+
+		float normalizedX = Mathf.Clamp01(logicalPosition.x / renderState.Size);
+		float normalizedY = Mathf.Clamp01(logicalPosition.y / renderState.Size);
+		int pixelX = Mathf.Clamp(Mathf.RoundToInt(normalizedX * (ComputeTextureSize - 1)), 0, ComputeTextureSize - 1);
+		int pixelY = Mathf.Clamp(Mathf.RoundToInt(normalizedY * (ComputeTextureSize - 1)), 0, ComputeTextureSize - 1);
+		return pixelY * ComputeTextureSize + pixelX;
 	}
 
 	void ConfigureMaterialForTransparency(Material targetMaterial)

@@ -61,6 +61,13 @@ public class BoardState
 		);
 	}
 
+	public void RemoveStoneAt(int player, int stoneIndex)
+	{
+		if(player < 0 || player >= PlayerCount)
+			throw new System.IndexOutOfRangeException("Player index our of range.");
+		stones[player].RemoveAt(stoneIndex);
+	}
+
 	public IReadOnlyList<StonePlacement> GetStones(int player)
 	{
 		if(player < 0 || player >= PlayerCount)
@@ -96,60 +103,8 @@ public class BoardState
 			return false;
 		}
 
-		if(IsOccupied(position))
-		{
-			newState = null;
-			return false;
-		}
-
 		newState = new(this);
 		newState.AddStone(player, position, strength);
 		return true;
-	}
-
-	public bool IsOccupied(Vector2 position)
-	{
-		if(position.x < 0 || position.x > Size || position.y < 0 || position.y > Size)
-			return false;
-
-		return EvaluateTotalDensity(position) >= Threshold;
-	}
-
-	float EvaluateTotalDensity(Vector2 position)
-	{
-		float totalDensity = 0;
-		for(int player = 0; player < PlayerCount; ++player)
-		{
-			IReadOnlyList<StonePlacement> playerStones = GetStones(player);
-			for(int i = 0; i < playerStones.Count; ++i)
-				totalDensity += EvaluateStoneDensityWithMirrors(position, playerStones[i]);
-		}
-
-		return totalDensity;
-	}
-
-	float EvaluateStoneDensityWithMirrors(Vector2 position, StonePlacement stone)
-	{
-		float invDoubleVariance = 0.5f / Mathf.Max(StoneVariance, 0.0001f);
-
-		float SumTerm(float x, float y)
-		{
-			Vector2 delta = position - new Vector2(x, y);
-			return stone.strength * Mathf.Exp(-Vector2.Dot(delta, delta) * invDoubleVariance);
-		}
-
-		float rightX = 2 * Size - stone.position.x;
-		float topY = 2 * Size - stone.position.y;
-
-		return
-			SumTerm(stone.position.x, stone.position.y) +
-			SumTerm(-stone.position.x, stone.position.y) +
-			SumTerm(rightX, stone.position.y) +
-			SumTerm(stone.position.x, -stone.position.y) +
-			SumTerm(stone.position.x, topY) +
-			SumTerm(-stone.position.x, -stone.position.y) +
-			SumTerm(-stone.position.x, topY) +
-			SumTerm(rightX, -stone.position.y) +
-			SumTerm(rightX, topY);
 	}
 }

@@ -1,4 +1,10 @@
-#pragma kernel CSMain
+#pragma kernel CSDistribution
+#pragma kernel CSTerritory
+#pragma kernel CSInitLabels
+#pragma kernel CSPropagateLabels
+#pragma kernel CSClearChainStats
+#pragma kernel CSAccumulateChainStats
+#pragma kernel CSCompactChainStats
 
 struct StonePlacement
 {
@@ -6,12 +12,23 @@ struct StonePlacement
 	float strength;
 };
 
-RWTexture2D<float4> _Output;
+RWTexture2D<float4> _DistributionOutput;
+Texture2D<float4> _DistributionInput;
+RWTexture2D<float4> _TerritoryOutput;
 
 StructuredBuffer<StonePlacement> _Player0Stones;
 StructuredBuffer<StonePlacement> _Player1Stones;
 StructuredBuffer<StonePlacement> _Player2Stones;
 StructuredBuffer<StonePlacement> _Player3Stones;
+
+RWStructuredBuffer<int> _OwnerBuffer;
+RWStructuredBuffer<int> _LabelBufferRead;
+RWStructuredBuffer<int> _LabelBufferWrite;
+RWStructuredBuffer<int> _CclChangedBuffer;
+RWStructuredBuffer<int> _ChainOwnerBuffer;
+RWStructuredBuffer<int> _ChainPixelCountBuffer;
+RWStructuredBuffer<int> _ChainHasLibertyBuffer;
+AppendStructuredBuffer<int4> _CompactChainStatBuffer;
 
 int _Player0StoneCount;
 int _Player1StoneCount;
@@ -20,6 +37,15 @@ int _Player3StoneCount;
 
 float _BoardSize;
 float _StoneVariance;
+float _Threshold;
+int _PlayerCount;
+int _TextureWidth;
+int _TextureHeight;
+
+float4 _PlayerColor0;
+float4 _PlayerColor1;
+float4 _PlayerColor2;
+float4 _PlayerColor3;
 
 float GaussianContribution(float2 boardPosition, float2 center, float strength, float inverseDoubleVariance)
 {
@@ -56,16 +82,37 @@ float AccumulateDensity(float2 boardPosition, StructuredBuffer<StonePlacement> s
 	return density;
 }
 
-[numthreads(8, 8, 1)]
-void CSMain(uint3 id : SV_DispatchThreadID)
+int ToIndex(int2 coord)
 {
-	uint width;
-	uint height;
-	_Output.GetDimensions(width, height);
+	return coord.y * _TextureWidth + coord.x;
+}
+
+bool InBounds(int2 coord)
+{
+	return coord.x >= 0 && coord.y >= 0 && coord.x < _TextureWidth && coord.y < _TextureHeight;
+}
+
+float4 GetPlayerColor(int player)
+{
+	if(player == 0)
+		return _PlayerColor0;
+	if(player == 1)
+		return _PlayerColor1;
+	if(player == 2)
+		return _PlayerColor2;
+	return _PlayerColor3;
+}
+
+[numthreads(8, 8, 1)]
+void CSDistribution(uint3 id : SV_DispatchThreadID)
+{
+	uint width = (uint)_TextureWidth;
+	uint height = (uint)_TextureHeight;
 	if(id.x >= width || id.y >= height)
 		return;
 
-	float2 uv = (float2(id.xy) + 0.5) / float2(width, height);
+	int2 coord = int2(id.xy);
+	float2 uv = (float2(coord) + 0.5) / float2(_TextureWidth, _TextureHeight);
 	float2 boardPosition = uv * _BoardSize;
 
 	float4 density = float4(
@@ -75,5 +122,191 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 		AccumulateDensity(boardPosition, _Player3Stones, _Player3StoneCount)
 	);
 
-	_Output[id.xy] = density;
+	_DistributionOutput[coord] = density;
+}
+
+[numthreads(8, 8, 1)]
+void CSTerritory(uint3 id : SV_DispatchThreadID)
+{
+	uint width = (uint)_TextureWidth;
+	uint height = (uint)_TextureHeight;
+	if(id.x >= width || id.y >= height)
+		return;
+
+	int2 coord = int2(id.xy);
+	int index = ToIndex(coord);
+
+	float4 density = _DistributionInput[coord];
+	float totalDensity = density.x + density.y + density.z + density.w;
+
+	float maxDensity = density.x;
+	int owner = 0;
+
+	if(density.y > maxDensity)
+	{
+		maxDensity = density.y;
+		owner = 1;
+	}
+	if(density.z > maxDensity)
+	{
+		maxDensity = density.z;
+		owner = 2;
+	}
+	if(density.w > maxDensity)
+	{
+		maxDensity = density.w;
+		owner = 3;
+	}
+
+	bool occupied = totalDensity >= _Threshold && owner < _PlayerCount;
+	if(!occupied)
+	{
+		_OwnerBuffer[index] = -1;
+		_TerritoryOutput[coord] = float4(0, 0, 0, 0);
+		return;
+	}
+
+	_OwnerBuffer[index] = owner;
+	float4 color = GetPlayerColor(owner);
+	color.a = 1;
+	_TerritoryOutput[coord] = color;
+}
+
+[numthreads(8, 8, 1)]
+void CSInitLabels(uint3 id : SV_DispatchThreadID)
+{
+	uint width = (uint)_TextureWidth;
+	uint height = (uint)_TextureHeight;
+	if(id.x >= width || id.y >= height)
+		return;
+
+	int2 coord = int2(id.xy);
+	int index = ToIndex(coord);
+	int owner = _OwnerBuffer[index];
+	_LabelBufferWrite[index] = owner >= 0 ? index : -1;
+}
+
+[numthreads(8, 8, 1)]
+void CSPropagateLabels(uint3 id : SV_DispatchThreadID)
+{
+	uint width = (uint)_TextureWidth;
+	uint height = (uint)_TextureHeight;
+	if(id.x >= width || id.y >= height)
+		return;
+
+	int2 coord = int2(id.xy);
+	int index = ToIndex(coord);
+	int owner = _OwnerBuffer[index];
+	if(owner < 0)
+	{
+		_LabelBufferWrite[index] = -1;
+		return;
+	}
+
+	int best = _LabelBufferRead[index];
+    int current = best;
+
+	for(int dy = -1; dy <= 1; ++dy)
+	{
+		for(int dx = -1; dx <= 1; ++dx)
+		{
+			if(dx == 0 && dy == 0)
+				continue;
+
+			int2 neighbor = coord + int2(dx, dy);
+			if(!InBounds(neighbor))
+				continue;
+
+			int neighborIndex = ToIndex(neighbor);
+			if(_OwnerBuffer[neighborIndex] != owner)
+				continue;
+
+			int neighborLabel = _LabelBufferRead[neighborIndex];
+			if(neighborLabel >= 0)
+				best = min(best, neighborLabel);
+		}
+	}
+
+	_LabelBufferWrite[index] = best;
+	if(best != current)
+		InterlockedMax(_CclChangedBuffer[0], 1);
+}
+
+[numthreads(8, 8, 1)]
+void CSClearChainStats(uint3 id : SV_DispatchThreadID)
+{
+	uint width = (uint)_TextureWidth;
+	uint height = (uint)_TextureHeight;
+	if(id.x >= width || id.y >= height)
+		return;
+
+	int index = ToIndex(int2(id.xy));
+	_ChainOwnerBuffer[index] = -1;
+	_ChainPixelCountBuffer[index] = 0;
+	_ChainHasLibertyBuffer[index] = 0;
+}
+
+[numthreads(8, 8, 1)]
+void CSAccumulateChainStats(uint3 id : SV_DispatchThreadID)
+{
+	uint width = (uint)_TextureWidth;
+	uint height = (uint)_TextureHeight;
+	if(id.x >= width || id.y >= height)
+		return;
+
+	int2 coord = int2(id.xy);
+	int index = ToIndex(coord);
+	int owner = _OwnerBuffer[index];
+	if(owner < 0)
+		return;
+
+	int rootLabel = _LabelBufferRead[index];
+	if(rootLabel < 0)
+		return;
+
+	InterlockedMax(_ChainOwnerBuffer[rootLabel], owner);
+	InterlockedAdd(_ChainPixelCountBuffer[rootLabel], 1);
+
+	int2 neighbors[4] = {
+		coord + int2(1, 0),
+		coord + int2(-1, 0),
+		coord + int2(0, 1),
+		coord + int2(0, -1)
+	};
+
+	for(int i = 0; i < 4; ++i)
+	{
+		int2 neighbor = neighbors[i];
+		if(!InBounds(neighbor))
+			continue;
+
+		int neighborIndex = ToIndex(neighbor);
+		if(_OwnerBuffer[neighborIndex] < 0)
+		{
+			InterlockedMax(_ChainHasLibertyBuffer[rootLabel], 1);
+			return;
+		}
+	}
+}
+
+[numthreads(8, 8, 1)]
+void CSCompactChainStats(uint3 id : SV_DispatchThreadID)
+{
+	uint width = (uint)_TextureWidth;
+	uint height = (uint)_TextureHeight;
+	if(id.x >= width || id.y >= height)
+		return;
+
+	int index = ToIndex(int2(id.xy));
+	if(_OwnerBuffer[index] < 0)
+		return;
+	if(_LabelBufferRead[index] != index)
+		return;
+
+	_CompactChainStatBuffer.Append(int4(
+		index,
+		_ChainOwnerBuffer[index],
+		_ChainPixelCountBuffer[index],
+		_ChainHasLibertyBuffer[index]
+	));
 }

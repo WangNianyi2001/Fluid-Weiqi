@@ -39,9 +39,16 @@ public class GameInput : MonoBehaviour
 		bool needPreviewRefresh = !hasPreviewPosition || (logicalPosition - lastPreviewPosition).sqrMagnitude > PreviewPositionEpsilon;
 		if(needPreviewRefresh)
 		{
-			game.TryPreviewStone(logicalPosition, placementStrength);
-			lastPreviewPosition = logicalPosition;
-			hasPreviewPosition = true;
+			bool previewSucceeded = game.TryPreviewStone(logicalPosition, placementStrength);
+			if(previewSucceeded)
+			{
+				lastPreviewPosition = logicalPosition;
+				hasPreviewPosition = true;
+			}
+			else
+			{
+				hasPreviewPosition = false;
+			}
 		}
 
 		if(Input.GetMouseButtonDown(0))
