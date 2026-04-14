@@ -131,7 +131,6 @@ public class Board : MonoBehaviour
 
 		material = new(renderer.sharedMaterial);
 		renderer.material = material;
-		ConfigureMaterialForTransparency(material);
 		material.mainTexture = mainTexture;
 
 		if(displayShader != null)
@@ -607,23 +606,6 @@ public class Board : MonoBehaviour
 		int pixelX = Mathf.Clamp(Mathf.RoundToInt(normalizedX * (ComputeTextureSize - 1)), 0, ComputeTextureSize - 1);
 		int pixelY = Mathf.Clamp(Mathf.RoundToInt(normalizedY * (ComputeTextureSize - 1)), 0, ComputeTextureSize - 1);
 		return pixelY * ComputeTextureSize + pixelX;
-	}
-
-	void ConfigureMaterialForTransparency(Material targetMaterial)
-	{
-		if(targetMaterial.HasProperty("_Mode"))
-			targetMaterial.SetFloat("_Mode", 3f);
-		if(targetMaterial.HasProperty("_SrcBlend"))
-			targetMaterial.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-		if(targetMaterial.HasProperty("_DstBlend"))
-			targetMaterial.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-		if(targetMaterial.HasProperty("_ZWrite"))
-			targetMaterial.SetInt("_ZWrite", 0);
-
-		targetMaterial.DisableKeyword("_ALPHATEST_ON");
-		targetMaterial.EnableKeyword("_ALPHABLEND_ON");
-		targetMaterial.DisableKeyword("_ALPHAPREMULTIPLY_ON");
-		targetMaterial.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
 	}
 	#endregion
 
