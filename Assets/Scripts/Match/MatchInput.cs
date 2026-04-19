@@ -1,71 +1,94 @@
 using UnityEngine;
+using System;
 
 public class MatchInput : MonoBehaviour
 {
 	const float PreviewPositionEpsilon = 1e-3f;
 
-	Camera Camera => GameManager.Instance.Camera;
+	Camera Camera => GameManager.Instance != null ? GameManager.Instance.Camera : null;
+	Board Board => GameManager.Instance != null ? GameManager.Instance.Board : null;
 	LayerMask RaycastMask => Physics.DefaultRaycastLayers;
-	[SerializeField] private float placementStrength = 1;
+	[SerializeField] private KeyCode passKey = KeyCode.None;
 
-	Match match;
-	bool hasPreviewPosition;
-	Vector2 lastPreviewPosition;
+	bool hasCursorPosition;
+	Vector2 lastCursorPosition;
 
-	protected void Awake()
-	{
-		match = GetComponent<Match>();
-	}
+	public event Action<Vector2> OnCursorEnter;
+	public event Action<Vector2> OnCursorMove;
+	public event Action OnCursorExit;
+	public event Action<Vector2> OnPlace;
+	public event Action OnPass;
 
 	protected void Update()
 	{
-		if(Camera == null)
+		if(Camera == null || Board == null)
 		{
-			match.ClearPreview();
+			EmitCursorExitIfNeeded();
 			return;
 		}
 
 		if(!TryGetBoardHit(out RaycastHit hit))
 		{
-			match.ClearPreview();
-			hasPreviewPosition = false;
+			EmitCursorExitIfNeeded();
 			return;
 		}
 
-		Vector2 logicalPosition = match.Board.WorldToLogicalPosition(hit.point);
+		Vector2 logicalPosition = Board.WorldToLogicalPosition(hit.point);
 		bool freePlace = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
 		if(!freePlace)
 		{
-			float maxCoord = match.Board.Size - 1;
+			float maxCoord = Board.Size - 1;
 			logicalPosition = new Vector2(
 				Mathf.Clamp(Mathf.Round(logicalPosition.x), 0, maxCoord),
 				Mathf.Clamp(Mathf.Round(logicalPosition.y), 0, maxCoord)
 			);
 		}
-		bool needPreviewRefresh = !hasPreviewPosition || (logicalPosition - lastPreviewPosition).sqrMagnitude > PreviewPositionEpsilon;
-		if(needPreviewRefresh)
+
+		if(!hasCursorPosition)
 		{
-			bool previewSucceeded = match.TryPreviewStone(logicalPosition, placementStrength);
-			if(previewSucceeded)
-			{
-				lastPreviewPosition = logicalPosition;
-				hasPreviewPosition = true;
-			}
-			else
-			{
-				hasPreviewPosition = false;
-			}
+			hasCursorPosition = true;
+			lastCursorPosition = logicalPosition;
+			OnCursorEnter?.Invoke(logicalPosition);
+			OnCursorMove?.Invoke(logicalPosition);
+		}
+		else if((logicalPosition - lastCursorPosition).sqrMagnitude > PreviewPositionEpsilon)
+		{
+			lastCursorPosition = logicalPosition;
+			OnCursorMove?.Invoke(logicalPosition);
 		}
 
 		if(Input.GetMouseButtonDown(0))
 		{
-			if(match.TryPlaceStone(logicalPosition, placementStrength))
-				hasPreviewPosition = false;
+			OnPlace?.Invoke(logicalPosition);
+			OnCursorMove?.Invoke(logicalPosition);
 		}
+
+		if(passKey != KeyCode.None && Input.GetKeyDown(passKey))
+			OnPass?.Invoke();
+	}
+
+	public void EmitPass()
+	{
+		OnPass?.Invoke();
+	}
+
+	void EmitCursorExitIfNeeded()
+	{
+		if(!hasCursorPosition)
+			return;
+
+		hasCursorPosition = false;
+		OnCursorExit?.Invoke();
 	}
 
 	bool TryGetBoardHit(out RaycastHit hit)
 	{
+		if(Board == null)
+		{
+			hit = default;
+			return false;
+		}
+
 		Vector3 mousePosition = Input.mousePosition;
 		if(!float.IsNormal(mousePosition.sqrMagnitude))
 		{
@@ -76,6 +99,6 @@ public class MatchInput : MonoBehaviour
 		if(!Physics.Raycast(ray, out hit, Mathf.Infinity, RaycastMask, QueryTriggerInteraction.Ignore))
 			return false;
 
-		return hit.collider.transform.IsChildOf(match.Board.transform);
+		return hit.collider.transform.IsChildOf(Board.transform);
 	}
 }

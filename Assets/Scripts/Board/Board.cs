@@ -199,9 +199,8 @@ public class Board : MonoBehaviour
 		return true;
 	}
 
-	public bool TryPlaceStone(int playerIndex, Vector2 logicalPosition, out int nextPlayerIndex, float strength = 1)
+	public bool TryPlaceStone(int playerIndex, Vector2 logicalPosition, float strength = 1)
 	{
-		nextPlayerIndex = playerIndex;
 		RefreshRendering();
 
 		if(IsOccupiedAtLogicalPosition(State, logicalPosition))
@@ -239,7 +238,6 @@ public class Board : MonoBehaviour
 		hasPreview = false;
 		previewState = null;
 
-		nextPlayerIndex = (playerIndex + 1) % PlayerCount;
 		return true;
 	}
 

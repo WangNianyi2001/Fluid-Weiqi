@@ -9,7 +9,6 @@ public abstract class Match : MonoBehaviour
 
 	#region References
 	public Board Board => GameManager.Instance.Board;
-	public BoardState State => Board.State;
 	#endregion
 
 	#region Unity life cycle
@@ -17,72 +16,105 @@ public abstract class Match : MonoBehaviour
 	{
 		Current = this;
 
-		gameObject.AddComponent<MatchInput>();
+		matchInput = gameObject.AddComponent<MatchInput>();
+
+		matchInput.OnCursorEnter += OnCursorEnter;
+		matchInput.OnCursorMove += OnCursorMove;
+		matchInput.OnCursorExit += OnCursorExit;
+		matchInput.OnPlace += OnPlace;
+		matchInput.OnPass += OnPass;
 	}
 
 	protected void Start()
 	{
-		uiGo = MakeUi();
+		ui = MakeUi();
 		CurrentPlayerIndex = 0;
 	}
 
 	protected void OnDestroy()
 	{
-		if(uiGo != null)
+		if(matchInput != null)
 		{
-			Destroy(uiGo);
-			uiGo = null;
+			matchInput.OnCursorEnter -= OnCursorEnter;
+			matchInput.OnCursorMove -= OnCursorMove;
+			matchInput.OnCursorExit -= OnCursorExit;
+			matchInput.OnPlace -= OnPlace;
+			matchInput.OnPass -= OnPass;
+
+			matchInput = null;
+		}
+
+		if(ui != null)
+		{
+			Destroy(ui);
+			ui = null;
 		}
 	}
 	#endregion
 
+	#region Input
+	MatchInput matchInput;
+
+	protected virtual void OnCursorEnter(Vector2 logicalPosition)
+	{
+		Board.TryPreviewStone(currentPlayerIndex, logicalPosition);
+	}
+
+	protected virtual void OnCursorMove(Vector2 logicalPosition)
+	{
+		Board.TryPreviewStone(currentPlayerIndex, logicalPosition);
+	}
+
+	protected virtual void OnCursorExit()
+	{
+		Board.ClearPreview();
+	}
+
+	protected virtual void OnPlace(Vector2 logicalPosition)
+	{
+		if(!Board.TryPlaceStone(currentPlayerIndex, logicalPosition))
+			return;
+		onStateChanged?.Invoke();
+	}
+
+	protected virtual void OnPass() { }
+	#endregion
+
 	#region UI
-	GameObject uiGo;
+	GameObject ui;
 
 	protected abstract GameObject MakeUi();
 	#endregion
 
 	#region Current player
-	[SerializeField] int currentPlayerIndex = 0;
+	int currentPlayerIndex = 0;
 	public int CurrentPlayerIndex
 	{
 		get => currentPlayerIndex % Board.PlayerCount;
-		set
+		protected set
 		{
 			int playerCount = Mathf.Max(1, Board.PlayerCount);
 			currentPlayerIndex = ((value % playerCount) + playerCount) % playerCount;
-			Board.RefreshRendering();
-			StateCommitted?.Invoke();
-			CurrentPlayerChanged?.Invoke(currentPlayerIndex);
+			onCurrentPlayerChanged?.Invoke(currentPlayerIndex);
 		}
 	}
-	public event Action<int> CurrentPlayerChanged;
-	#endregion
 
-	#region Preview
-	public event Action StateCommitted;
-
-	public void ClearPreview()
+	protected Action<int> onCurrentPlayerChanged;
+	public event Action<int> OnCurrentPlayerChanged
 	{
-		Board.ClearPreview();
+		add => onCurrentPlayerChanged += value;
+		remove => onCurrentPlayerChanged -= value;
 	}
 	#endregion
 
-	#region Stone placement
-	public bool TryPlaceStone(Vector2 logicalPosition, float strength = 1)
-	{
-		if(!Board.TryPlaceStone(currentPlayerIndex, logicalPosition, out int nextPlayerIndex, strength))
-			return false;
+	#region State
+	public BoardState State => Board.State;
 
-		currentPlayerIndex = nextPlayerIndex;
-		StateCommitted?.Invoke();
-		CurrentPlayerChanged?.Invoke(currentPlayerIndex);
-		return true;
-	}
-
-	public bool TryPreviewStone(Vector2 logicalPosition, float strength = 1)
+	protected Action onStateChanged;
+	public event Action OnStateChanged
 	{
-		return Board.TryPreviewStone(currentPlayerIndex, logicalPosition, strength);
+		add => onStateChanged += value;
+		remove => onStateChanged -= value;
 	}
 	#endregion
 }

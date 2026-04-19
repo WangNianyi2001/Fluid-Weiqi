@@ -20,8 +20,8 @@ public class TraditionalMatchUi : MonoBehaviour
 
 		RebuildRows();
 
-		match.StateCommitted += RefreshAreas;
-		match.CurrentPlayerChanged += HighlightCurrentPlayer;
+		match.OnStateChanged += RefreshAreas;
+		match.OnCurrentPlayerChanged += HighlightCurrentPlayer;
 
 		RefreshAreas();
 		HighlightCurrentPlayer(match.CurrentPlayerIndex);
@@ -32,8 +32,8 @@ public class TraditionalMatchUi : MonoBehaviour
 		if(match == null)
 			return;
 
-		match.StateCommitted -= RefreshAreas;
-		match.CurrentPlayerChanged -= HighlightCurrentPlayer;
+		match.OnStateChanged -= RefreshAreas;
+		match.OnCurrentPlayerChanged -= HighlightCurrentPlayer;
 	}
 	#endregion
 
