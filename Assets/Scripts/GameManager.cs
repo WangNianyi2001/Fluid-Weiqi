@@ -20,16 +20,12 @@ public class GameManager : MonoBehaviour
 		if(Camera == null)
 			Camera = Camera.main;
 		cBrain = Camera.gameObject.GetComponent<CinemachineBrain>();
-
-		BoardUtility.Initialize();
 	}
 
 	protected void OnDestroy()
 	{
 		if(Instance == this)
 			Instance = null;
-
-		BoardUtility.Dispose();
 	}
 
 	protected void Start()

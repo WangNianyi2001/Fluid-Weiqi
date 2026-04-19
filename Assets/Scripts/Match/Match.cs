@@ -63,12 +63,12 @@ public abstract class Match : MonoBehaviour
 
 	protected virtual void OnCursorEnter(Vector2 logicalPosition)
 	{
-		Board.Current.TryPreviewStone(currentPlayerIndex, logicalPosition);
+		TryPreviewStone(logicalPosition);
 	}
 
 	protected virtual void OnCursorMove(Vector2 logicalPosition)
 	{
-		Board.Current.TryPreviewStone(currentPlayerIndex, logicalPosition);
+		TryPreviewStone(logicalPosition);
 	}
 
 	protected virtual void OnCursorExit()
@@ -78,12 +78,96 @@ public abstract class Match : MonoBehaviour
 
 	protected virtual void OnPlace(Vector2 logicalPosition)
 	{
-		if(!Board.Current.TryPlaceStone(currentPlayerIndex, logicalPosition))
+		Board board = Board.Current;
+		if(board == null)
 			return;
+
+		if(!board.State.TryPlaceStone(
+			currentPlayerIndex,
+			logicalPosition,
+			IsOccupiedAtLogicalPosition,
+			GetChainStats,
+			GetChainLabelAtLogicalPosition,
+			GetStoneChainLabels,
+			out BoardState nextState))
+			return;
+
+		board.SetState(nextState);
+		board.ClearPreview();
 		onStateChanged?.Invoke();
 	}
 
 	protected virtual void OnPass() { }
+
+	bool TryPreviewStone(Vector2 logicalPosition)
+	{
+		Board board = Board.Current;
+		if(board == null)
+			return false;
+
+		if(IsOccupiedAtLogicalPosition(board.State, logicalPosition))
+		{
+			board.ClearPreview();
+			return false;
+		}
+
+		if(!board.State.PeekStonePlacement(currentPlayerIndex, logicalPosition, out BoardState previewState))
+		{
+			board.ClearPreview();
+			return false;
+		}
+
+		board.ShowPreview(previewState);
+		return true;
+	}
+
+	bool IsOccupiedAtLogicalPosition(BoardState renderState, Vector2 logicalPosition)
+	{
+		AnalyzeState(renderState);
+		Board board = Board.Current;
+		if(board == null || board.Caches == null)
+			return false;
+		return BoardUtility.IsOccupiedAtLogicalPosition(board.Caches, renderState, logicalPosition);
+	}
+
+	List<BoardUtility.ChainStat> GetChainStats(BoardState renderState)
+	{
+		AnalyzeState(renderState);
+		Board board = Board.Current;
+		if(board == null || board.Caches == null)
+			return new List<BoardUtility.ChainStat>();
+		return BoardUtility.GetChainStats(board.Caches);
+	}
+
+	int GetChainLabelAtLogicalPosition(BoardState renderState, Vector2 logicalPosition)
+	{
+		AnalyzeState(renderState);
+		Board board = Board.Current;
+		if(board == null || board.Caches == null)
+			return -1;
+		return BoardUtility.GetChainLabelAtLogicalPosition(board.Caches, renderState, logicalPosition);
+	}
+
+	List<List<int>> GetStoneChainLabels(BoardState renderState)
+	{
+		AnalyzeState(renderState);
+		Board board = Board.Current;
+		if(board == null || board.Caches == null)
+			return new List<List<int>>();
+		return BoardUtility.GetStoneChainLabels(board.Caches, renderState);
+	}
+
+	void AnalyzeState(BoardState renderState)
+	{
+		Board board = Board.Current;
+		if(renderState == null || board == null || board.Caches == null || !board.Caches.isInitialized)
+			return;
+
+		Color[] playerColors = new Color[Mathf.Min(PlayerCount, BoardUtility.MaxPlayers)];
+		for(int i = 0; i < playerColors.Length; ++i)
+			playerColors[i] = PlayerInfos[i].color;
+		BoardUtility.RenderAnalysis(board.Caches, renderState, playerColors);
+	}
 	#endregion
 
 	#region UI

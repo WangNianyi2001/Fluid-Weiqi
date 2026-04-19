@@ -50,11 +50,20 @@ public class PlayerStatusUi : MonoBehaviour
 
 	void RefreshAreas()
 	{
-		if(rows.Count == 0)
+		if(rows.Count == 0 || Board.Current == null)
 			return;
 
-		int[] areaByPlayer = Board.Current.GetPlayerAreaPixelsByDominance();
-		float total = Board.Current.ComputeResolution * Board.Current.ComputeResolution;
+		BoardUtility.BoardCaches caches = Board.Current.Caches;
+		if(caches == null || !caches.isInitialized)
+			return;
+
+		Color[] playerColors = new Color[Mathf.Min(Match.PlayerCount, BoardUtility.MaxPlayers)];
+		for(int i = 0; i < playerColors.Length; ++i)
+			playerColors[i] = Match.PlayerInfos[i].color;
+		BoardUtility.RenderAnalysis(caches, Board.Current.State, playerColors);
+
+		int[] areaByPlayer = BoardUtility.GetPlayerAreaPixelsByDominance(caches, Match.PlayerCount);
+		float total = BoardUtility.ComputeTextureSize * BoardUtility.ComputeTextureSize;
 		for(int i = 0; i < rows.Count; ++i)
 		{
 			rows[i].Name = Match.PlayerInfos[i].name;

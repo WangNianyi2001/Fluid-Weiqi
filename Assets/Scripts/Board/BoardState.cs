@@ -1,4 +1,5 @@
 using UnityEngine;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -106,5 +107,71 @@ public class BoardState
 		newState = new(this);
 		newState.AddStone(player, position, strength);
 		return true;
+	}
+
+	public bool TryPlaceStone(
+		int player,
+		Vector2 position,
+		Func<BoardState, Vector2, bool> isOccupiedAtLogicalPosition,
+		Func<BoardState, List<BoardUtility.ChainStat>> getChainStats,
+		Func<BoardState, Vector2, int> getChainLabelAtLogicalPosition,
+		Func<BoardState, List<List<int>>> getStoneChainLabels,
+		out BoardState newState,
+		float strength = 1)
+	{
+		newState = null;
+		if(isOccupiedAtLogicalPosition == null || getChainStats == null || getChainLabelAtLogicalPosition == null || getStoneChainLabels == null)
+			throw new ArgumentNullException("BoardState.TryPlaceStone analysis callbacks must not be null.");
+
+		if(isOccupiedAtLogicalPosition(this, position))
+			return false;
+
+		if(!PeekStonePlacement(player, position, out BoardState placedPreviewState, strength))
+			return false;
+
+		List<BoardUtility.ChainStat> chainStats = getChainStats(placedPreviewState);
+		Dictionary<int, BoardUtility.ChainStat> chainStatsByRoot = new(chainStats.Count);
+		HashSet<int> capturedRoots = new();
+
+		for(int i = 0; i < chainStats.Count; ++i)
+		{
+			BoardUtility.ChainStat chainStat = chainStats[i];
+			chainStatsByRoot[chainStat.rootLabel] = chainStat;
+			if(chainStat.owner != player && chainStat.hasLiberty == 0)
+				capturedRoots.Add(chainStat.rootLabel);
+		}
+
+		int placedChainRoot = getChainLabelAtLogicalPosition(placedPreviewState, position);
+		bool placedChainHasLiberty = chainStatsByRoot.TryGetValue(placedChainRoot, out BoardUtility.ChainStat placedChainStat)
+			&& placedChainStat.hasLiberty != 0;
+		if(capturedRoots.Count == 0 && !placedChainHasLiberty)
+			return false;
+
+		if(capturedRoots.Count > 0)
+			RemoveCapturedStones(placedPreviewState, capturedRoots, player, getStoneChainLabels);
+
+		newState = placedPreviewState;
+		return true;
+	}
+
+	static void RemoveCapturedStones(
+		BoardState renderState,
+		HashSet<int> capturedRoots,
+		int currentPlayerIndex,
+		Func<BoardState, List<List<int>>> getStoneChainLabels)
+	{
+		List<List<int>> stoneChainLabels = getStoneChainLabels(renderState);
+		for(int player = 0; player < renderState.PlayerCount; ++player)
+		{
+			if(player == currentPlayerIndex)
+				continue;
+
+			List<int> playerLabels = stoneChainLabels[player];
+			for(int stoneIndex = playerLabels.Count - 1; stoneIndex >= 0; --stoneIndex)
+			{
+				if(capturedRoots.Contains(playerLabels[stoneIndex]))
+					renderState.RemoveStoneAt(player, stoneIndex);
+			}
+		}
 	}
 }

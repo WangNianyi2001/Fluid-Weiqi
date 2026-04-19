@@ -1,5 +1,4 @@
 using UnityEngine;
-using System.Collections.Generic;
 using UnityEngine.Rendering;
 
 public class Board : MonoBehaviour
@@ -20,14 +19,14 @@ public class Board : MonoBehaviour
 	#region Properties
 	public Color[] PlayerColors { get; set; }
 	public int PlayerCount => PlayerColors.Length;
-	public int ComputeResolution => BoardUtility.ComputeResolution;
 	public BoardState State => state ??= new BoardState();
+	public BoardUtility.BoardCaches Caches => caches;
 	#endregion
 
 	#region Runtime state
 	BoardState state;
-	BoardState previewState;
 	bool hasPreview;
+	BoardUtility.BoardCaches caches;
 	Material material;
 	Material displayMaterial;
 	Material gridMaterial;
@@ -40,6 +39,8 @@ public class Board : MonoBehaviour
 	protected void Awake()
 	{
 		Current = this;
+
+		BoardUtility.Initialize(caches = new BoardUtility.BoardCaches());
 
 		displayShader = Resources.Load<Shader>(DisplayShaderResourcePath);
 		mainTexture = CreateRenderTexture(CreateMainTextureDescriptor());
@@ -82,8 +83,13 @@ public class Board : MonoBehaviour
 
 		ReleaseRenderTexture(ref mainTexture);
 
+		if(caches != null)
+		{
+			BoardUtility.Dispose(caches);
+			caches = null;
+		}
+
 		hasPreview = false;
-		previewState = null;
 	}
 
 	protected void Start()
@@ -108,23 +114,25 @@ public class Board : MonoBehaviour
 
 	public void RefreshRendering(BoardState renderState)
 	{
-		if(mainTexture == null || renderState == null || !BoardUtility.IsInitialized)
+		if(mainTexture == null || renderState == null || caches == null || !caches.isInitialized)
 			return;
 
-		BoardUtility.RenderAnalysis(renderState, PlayerColors);
+		Color[] colors = PlayerColors ?? new Color[] { Color.black, Color.white };
+		BoardUtility.RenderAnalysis(caches, renderState, colors);
 		if(displayMaterial != null)
 		{
-			displayMaterial.SetTexture("_DistributionMap", BoardUtility.DistributionMap);
+			displayMaterial.SetTexture("_DistributionMap", caches.distributionMap);
 			displayMaterial.SetFloat("_Threshold", renderState.Threshold);
+			int playerCount = colors.Length;
 			for(int player = 0; player < BoardUtility.MaxPlayers; ++player)
 			{
-				Color playerColor = player < PlayerCount ? PlayerColors[player] : Color.magenta;
+				Color playerColor = player < playerCount ? colors[player] : Color.magenta;
 				displayMaterial.SetColor($"_PlayerColor{player}", playerColor);
 			}
-			Graphics.Blit(BoardUtility.DistributionMap, mainTexture, displayMaterial);
+			Graphics.Blit(caches.distributionMap, mainTexture, displayMaterial);
 		}
 		else
-			Graphics.Blit(BoardUtility.DistributionMap, mainTexture);
+			Graphics.Blit(caches.distributionMap, mainTexture);
 	}
 	#endregion
 
@@ -189,151 +197,27 @@ public class Board : MonoBehaviour
 
 		int boardSize = Mathf.Max(2, Mathf.RoundToInt(State.Size));
 		gridMaterial.SetFloat("_BoardSize", boardSize);
-		gridMaterial.SetFloat("_StarEdgeOffset", GetStarEdgeOffset(boardSize));
-	}
-
-	int GetStarEdgeOffset(int boardSize)
-	{
-		if(boardSize >= 15)
-			return 3;
-
-		if(boardSize >= 11)
-			return 3;
-
-		if(boardSize >= 9)
-			return 2;
-
-		return Mathf.Max(1, Mathf.RoundToInt((boardSize - 1) * 0.5f));
+		gridMaterial.SetFloat("_StarEdgeOffset", BoardUtility.GetStarEdgeOffset(boardSize));
 	}
 	#endregion
 
- 	#region Game semantics
+ 	#region Preview
 	public void ClearPreview()
 	{
 		if(!hasPreview)
 			return;
 
 		hasPreview = false;
-		previewState = null;
 		RefreshRendering();
 	}
 
-	public bool TryPreviewStone(int playerIndex, Vector2 logicalPosition, float strength = 1)
+	public void ShowPreview(BoardState stateToPreview)
 	{
-		RefreshRendering();
-
-		if(IsOccupiedAtLogicalPosition(State, logicalPosition))
-		{
-			ClearPreview();
-			return false;
-		}
-
-		if(!State.PeekStonePlacement(playerIndex, logicalPosition, out BoardState newState, strength))
-		{
-			ClearPreview();
-			return false;
-		}
-
-		hasPreview = true;
-		previewState = newState;
-		RefreshRendering(previewState);
-		return true;
-	}
-
-	public bool TryPlaceStone(int playerIndex, Vector2 logicalPosition, float strength = 1)
-	{
-		RefreshRendering();
-
-		if(IsOccupiedAtLogicalPosition(State, logicalPosition))
-			return false;
-
-		if(!State.PeekStonePlacement(playerIndex, logicalPosition, out BoardState placedPreviewState, strength))
-			return false;
-
-		RefreshRendering(placedPreviewState);
-
-		List<BoardUtility.ChainStat> chainStats = GetChainStats();
-		Dictionary<int, BoardUtility.ChainStat> chainStatsByRoot = new(chainStats.Count);
-		HashSet<int> capturedRoots = new();
-
-		for(int i = 0; i < chainStats.Count; ++i)
-		{
-			BoardUtility.ChainStat chainStat = chainStats[i];
-			chainStatsByRoot[chainStat.rootLabel] = chainStat;
-			if(chainStat.owner != playerIndex && chainStat.hasLiberty == 0)
-				capturedRoots.Add(chainStat.rootLabel);
-		}
-
-		int placedChainRoot = GetChainLabelAtLogicalPosition(placedPreviewState, logicalPosition);
-		bool placedChainHasLiberty = chainStatsByRoot.TryGetValue(placedChainRoot, out BoardUtility.ChainStat placedChainStat) && placedChainStat.hasLiberty != 0;
-		if(capturedRoots.Count == 0 && !placedChainHasLiberty)
-		{
+		hasPreview = stateToPreview != null;
+		if(stateToPreview == null)
 			RefreshRendering();
-			return false;
-		}
-
-		if(capturedRoots.Count > 0)
-			RemoveCapturedStones(placedPreviewState, capturedRoots, playerIndex);
-
-		SetState(placedPreviewState);
-		hasPreview = false;
-		previewState = null;
-
-		return true;
-	}
-
-	void RemoveCapturedStones(BoardState renderState, HashSet<int> capturedRoots, int currentPlayerIndex)
-	{
-		List<List<int>> stoneChainLabels = GetStoneChainLabels(renderState);
-		for(int player = 0; player < renderState.PlayerCount; ++player)
-		{
-			if(player == currentPlayerIndex)
-				continue;
-
-			List<int> playerLabels = stoneChainLabels[player];
-			for(int stoneIndex = playerLabels.Count - 1; stoneIndex >= 0; --stoneIndex)
-			{
-				if(capturedRoots.Contains(playerLabels[stoneIndex]))
-					renderState.RemoveStoneAt(player, stoneIndex);
-			}
-		}
-	}
-	#endregion
-
-	#region Analysis wrappers
-	public int[] GetPlayerAreaPixelsByDominance()
-	{
-		if(!BoardUtility.IsInitialized)
-			return new int[PlayerCount];
-		return BoardUtility.GetPlayerAreaPixelsByDominance(PlayerCount);
-	}
-
-	public List<BoardUtility.ChainStat> GetChainStats()
-	{
-		if(!BoardUtility.IsInitialized)
-			return new List<BoardUtility.ChainStat>();
-		return BoardUtility.GetChainStats();
-	}
-
-	public int GetChainLabelAtLogicalPosition(BoardState renderState, Vector2 logicalPosition)
-	{
-		if(!BoardUtility.IsInitialized)
-			return -1;
-		return BoardUtility.GetChainLabelAtLogicalPosition(renderState, logicalPosition);
-	}
-
-	public bool IsOccupiedAtLogicalPosition(BoardState renderState, Vector2 logicalPosition)
-	{
-		if(!BoardUtility.IsInitialized)
-			return false;
-		return BoardUtility.IsOccupiedAtLogicalPosition(renderState, logicalPosition);
-	}
-
-	public List<List<int>> GetStoneChainLabels(BoardState renderState)
-	{
-		if(!BoardUtility.IsInitialized)
-			return new List<List<int>>();
-		return BoardUtility.GetStoneChainLabels(renderState);
+		else
+			RefreshRendering(stateToPreview);
 	}
 	#endregion
 
