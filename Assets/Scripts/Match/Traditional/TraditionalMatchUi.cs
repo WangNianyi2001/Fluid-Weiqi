@@ -1,38 +1,43 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-public class GameUi : MonoBehaviour
+public class TraditionalMatchUi : MonoBehaviour
 {
-	[SerializeField] private RectTransform playerListRoot;
-	[SerializeField] private GameObject playerRowPrefab;
-	[SerializeField] private string[] playerNames = new[] { "Black", "White", "Red", "Blue" };
+	#region References
+	[SerializeField] Match match;
+	#endregion
 
-	[SerializeField] Game game;
-	readonly List<PlayerStatusUi> rows = new();
+	#region Unity life cycle
+	void Awake()
+	{
+		match = transform.GetComponentInParent<Match>();
+	}
 
 	void OnEnable()
 	{
-		if(game == null)
-			game = GetComponent<Game>();
+		if(match == null)
+			match = GetComponent<Match>();
 
 		RebuildRows();
 
-		game.StateCommitted += RefreshAreas;
-		game.TurnChanged += HighlightCurrentPlayer;
+		match.StateCommitted += RefreshAreas;
+		match.CurrentPlayerChanged += HighlightCurrentPlayer;
 
 		RefreshAreas();
-		HighlightCurrentPlayer(game.CurrentPlayerIndex);
+		HighlightCurrentPlayer(match.CurrentPlayerIndex);
 	}
 
 	void OnDisable()
 	{
-		if(game == null)
+		if(match == null)
 			return;
 
-		game.StateCommitted -= RefreshAreas;
-		game.TurnChanged -= HighlightCurrentPlayer;
+		match.StateCommitted -= RefreshAreas;
+		match.CurrentPlayerChanged -= HighlightCurrentPlayer;
 	}
+	#endregion
 
+	#region Life cycle
 	void RebuildRows()
 	{
 		if(playerListRoot == null || playerRowPrefab == null)
@@ -45,7 +50,7 @@ public class GameUi : MonoBehaviour
 			Destroy(playerListRoot.GetChild(i - 1).gameObject);
 		rows.Clear();
 
-		for(int i = 0; i < game.Board.PlayerCount; ++i)
+		for(int i = 0; i < match.Board.PlayerCount; ++i)
 		{
 			GameObject rowGo = Instantiate(playerRowPrefab, playerListRoot);
 			PlayerStatusUi row = rowGo.GetComponent<PlayerStatusUi>();
@@ -61,8 +66,8 @@ public class GameUi : MonoBehaviour
 		if(rows.Count == 0)
 			return;
 
-		int[] areaByPlayer = game.GetPlayerAreaPixels();
-		float total = game.Board.ComputeResolution * game.Board.ComputeResolution;
+		int[] areaByPlayer = match.Board.GetPlayerAreaPixelsByDominance();
+		float total = match.Board.ComputeResolution * match.Board.ComputeResolution;
 		for(int i = 0; i < rows.Count; ++i)
 		{
 			int percentage = total > 0 ? Mathf.RoundToInt(areaByPlayer[i] / total * 100f) : 0;
@@ -70,6 +75,13 @@ public class GameUi : MonoBehaviour
 			rows[i].SetAreaValue(percentage);
 		}
 	}
+	#endregion
+
+	#region Players
+	[SerializeField] private RectTransform playerListRoot;
+	[SerializeField] private GameObject playerRowPrefab;
+	[SerializeField] private string[] playerNames = new[] { "黑", "白", "红", "蓝" };
+	readonly List<PlayerStatusUi> rows = new();
 
 	void HighlightCurrentPlayer(int currentPlayer)
 	{
@@ -79,8 +91,8 @@ public class GameUi : MonoBehaviour
 
 	Color GetPlayerColor(int player)
 	{
-		if(player < game.Board.PlayerColors.Count)
-			return game.Board.PlayerColors[player];
+		if(player < match.Board.PlayerColors.Count)
+			return match.Board.PlayerColors[player];
 		return Color.gray;
 	}
 
@@ -90,4 +102,5 @@ public class GameUi : MonoBehaviour
 			return playerNames[player];
 		return $"Player {player + 1}";
 	}
+	#endregion
 }

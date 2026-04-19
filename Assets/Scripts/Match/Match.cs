@@ -2,41 +2,73 @@ using UnityEngine;
 using System.Collections.Generic;
 using System;
 
-[RequireComponent(typeof(GameInput))]
-public class Game : MonoBehaviour
+public abstract class Match : MonoBehaviour
 {
+	#region References
 	[SerializeField] Board board;
+	public Board Board => board;
+	public BoardState State => Board.State;
+	#endregion
+
+	#region Unity life cycle
+	protected void Awake()
+	{
+		board = GetComponentInChildren<Board>();
+		gameObject.AddComponent<MatchInput>();
+	}
+
+	protected void Start()
+	{
+		CurrentPlayerIndex = 0;
+	}
+	#endregion
+
+	#region Current player
 	[SerializeField] int currentPlayerIndex = 0;
+	public int CurrentPlayerIndex
+	{
+		get => currentPlayerIndex;
+		set
+		{
+			currentPlayerIndex = Mathf.Clamp(value, 0, Board.PlayerCount - 1);
+			Board.RefreshRendering();
+			StateCommitted?.Invoke();
+			CurrentPlayerChanged?.Invoke(currentPlayerIndex);
+		}
+	}
+	public event Action<int> CurrentPlayerChanged;
+	#endregion
+
+	#region Preview
+	public event Action StateCommitted;
 	BoardState previewState;
 	bool hasPreview;
 
-	public int CurrentPlayerIndex => currentPlayerIndex;
-	public Board Board => board;
-	public BoardState State => board.State;
-	public event Action StateCommitted;
-	public event Action<int> TurnChanged;
-
-	void Start()
+	public void ClearPreview()
 	{
-		currentPlayerIndex = Mathf.Clamp(currentPlayerIndex, 0, board.PlayerCount - 1);
-		board.RefreshRendering();
-		StateCommitted?.Invoke();
-		TurnChanged?.Invoke(currentPlayerIndex);
-	}
+		if(!hasPreview)
+			return;
 
+		hasPreview = false;
+		previewState = null;
+		Board.RefreshRendering();
+	}
+	#endregion
+
+	#region Stone placement
 	public bool TryPlaceStone(Vector2 logicalPosition, float strength = 1)
 	{
-		RenderCurrentStateAnalysis();
+		Board.RefreshRendering();
 
-		if(board.IsOccupiedAtLogicalPosition(State, logicalPosition))
+		if(Board.IsOccupiedAtLogicalPosition(State, logicalPosition))
 			return false;
 
 		if(!State.PeekStonePlacement(currentPlayerIndex, logicalPosition, out BoardState previewState, strength))
 			return false;
 
-		board.RefreshRendering(previewState);
+		Board.RefreshRendering(previewState);
 
-		List<Board.ChainStat> chainStats = board.GetChainStats();
+		List<Board.ChainStat> chainStats = Board.GetChainStats();
 		Dictionary<int, Board.ChainStat> chainStatsByRoot = new(chainStats.Count);
 		HashSet<int> capturedRoots = new();
 		for(int i = 0; i < chainStats.Count; ++i)
@@ -47,32 +79,32 @@ public class Game : MonoBehaviour
 				capturedRoots.Add(chainStat.RootLabel);
 		}
 
-		int placedChainRoot = board.GetChainLabelAtLogicalPosition(previewState, logicalPosition);
+		int placedChainRoot = Board.GetChainLabelAtLogicalPosition(previewState, logicalPosition);
 		bool placedChainHasLiberty = chainStatsByRoot.TryGetValue(placedChainRoot, out Board.ChainStat placedChainStat) && placedChainStat.HasLiberty;
 		if(capturedRoots.Count == 0 && !placedChainHasLiberty)
 		{
-			board.RefreshRendering();
+			Board.RefreshRendering();
 			return false;
 		}
 
 		if(capturedRoots.Count > 0)
 			RemoveCapturedStones(previewState, capturedRoots);
 
-		board.SetState(previewState);
+		Board.SetState(previewState);
 		hasPreview = false;
 		previewState = null;
 
-		currentPlayerIndex = (currentPlayerIndex + 1) % board.PlayerCount;
+		currentPlayerIndex = (currentPlayerIndex + 1) % Board.PlayerCount;
 		StateCommitted?.Invoke();
-		TurnChanged?.Invoke(currentPlayerIndex);
+		CurrentPlayerChanged?.Invoke(currentPlayerIndex);
 		return true;
 	}
 
 	public bool TryPreviewStone(Vector2 logicalPosition, float strength = 1)
 	{
-		RenderCurrentStateAnalysis();
+		Board.RefreshRendering();
 
-		if(board.IsOccupiedAtLogicalPosition(State, logicalPosition))
+		if(Board.IsOccupiedAtLogicalPosition(State, logicalPosition))
 		{
 			ClearPreview();
 			return false;
@@ -86,28 +118,13 @@ public class Game : MonoBehaviour
 
 		hasPreview = true;
 		previewState = newState;
-		board.RefreshRendering(previewState);
+		Board.RefreshRendering(previewState);
 		return true;
-	}
-
-	public void ClearPreview()
-	{
-		if(!hasPreview)
-			return;
-
-		hasPreview = false;
-		previewState = null;
-		RenderCurrentStateAnalysis();
-	}
-
-	void RenderCurrentStateAnalysis()
-	{
-		board.RefreshRendering();
 	}
 
 	void RemoveCapturedStones(BoardState renderState, HashSet<int> capturedRoots)
 	{
-		List<List<int>> stoneChainLabels = board.GetStoneChainLabels(renderState);
+		List<List<int>> stoneChainLabels = Board.GetStoneChainLabels(renderState);
 		for(int player = 0; player < renderState.PlayerCount; ++player)
 		{
 			if(player == currentPlayerIndex)
@@ -121,9 +138,5 @@ public class Game : MonoBehaviour
 			}
 		}
 	}
-
-	public int[] GetPlayerAreaPixels()
-	{
-		return board.GetPlayerAreaPixelsByDominance();
-	}
+	#endregion
 }

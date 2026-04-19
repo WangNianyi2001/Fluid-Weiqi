@@ -1,7 +1,6 @@
 using UnityEngine;
 
-[RequireComponent(typeof(Game))]
-public class GameInput : MonoBehaviour
+public class MatchInput : MonoBehaviour
 {
 	const float PreviewPositionEpsilon = 0.0001f;
 
@@ -9,37 +8,37 @@ public class GameInput : MonoBehaviour
 	[SerializeField] private LayerMask raycastMask = Physics.DefaultRaycastLayers;
 	[SerializeField] private float placementStrength = 1;
 
-	Game game;
+	Match match;
 	bool hasPreviewPosition;
 	Vector2 lastPreviewPosition;
 
-	void Awake()
+	protected void Awake()
 	{
-		game = GetComponent<Game>();
+		match = GetComponent<Match>();
 		if(inputCamera == null)
 			inputCamera = Camera.main;
 	}
 
-	void Update()
+	protected void Update()
 	{
 		if(inputCamera == null)
 		{
-			game.ClearPreview();
+			match.ClearPreview();
 			return;
 		}
 
 		if(!TryGetBoardHit(out RaycastHit hit))
 		{
-			game.ClearPreview();
+			match.ClearPreview();
 			hasPreviewPosition = false;
 			return;
 		}
 
-		Vector2 logicalPosition = game.Board.WorldToLogicalPosition(hit.point);
+		Vector2 logicalPosition = match.Board.WorldToLogicalPosition(hit.point);
 		bool freePlace = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
 		if(!freePlace)
 		{
-			float maxCoord = game.Board.Size - 1;
+			float maxCoord = match.Board.Size - 1;
 			logicalPosition = new Vector2(
 				Mathf.Clamp(Mathf.Round(logicalPosition.x), 0, maxCoord),
 				Mathf.Clamp(Mathf.Round(logicalPosition.y), 0, maxCoord)
@@ -48,7 +47,7 @@ public class GameInput : MonoBehaviour
 		bool needPreviewRefresh = !hasPreviewPosition || (logicalPosition - lastPreviewPosition).sqrMagnitude > PreviewPositionEpsilon;
 		if(needPreviewRefresh)
 		{
-			bool previewSucceeded = game.TryPreviewStone(logicalPosition, placementStrength);
+			bool previewSucceeded = match.TryPreviewStone(logicalPosition, placementStrength);
 			if(previewSucceeded)
 			{
 				lastPreviewPosition = logicalPosition;
@@ -62,7 +61,7 @@ public class GameInput : MonoBehaviour
 
 		if(Input.GetMouseButtonDown(0))
 		{
-			if(game.TryPlaceStone(logicalPosition, placementStrength))
+			if(match.TryPlaceStone(logicalPosition, placementStrength))
 				hasPreviewPosition = false;
 		}
 	}
@@ -79,6 +78,6 @@ public class GameInput : MonoBehaviour
 		if(!Physics.Raycast(ray, out hit, Mathf.Infinity, raycastMask, QueryTriggerInteraction.Ignore))
 			return false;
 
-		return hit.collider.transform.IsChildOf(game.Board.transform);
+		return hit.collider.transform.IsChildOf(match.Board.transform);
 	}
 }
