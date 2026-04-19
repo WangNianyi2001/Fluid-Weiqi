@@ -2,7 +2,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
-public static class BoardUtilities
+public static class BoardUtility
 {
 	[StructLayout(LayoutKind.Sequential)]
 	public struct ChainStat

@@ -20,7 +20,7 @@ public class GameManager : MonoBehaviour
 			Camera = Camera.main;
 		cBrain = Camera.gameObject.GetComponent<CinemachineBrain>();
 
-		BoardUtilities.Initialize();
+		BoardUtility.Initialize();
 	}
 
 	protected void OnDestroy()
@@ -28,7 +28,7 @@ public class GameManager : MonoBehaviour
 		if(Instance == this)
 			Instance = null;
 
-		BoardUtilities.Dispose();
+		BoardUtility.Dispose();
 	}
 
 	protected void Start()
@@ -39,7 +39,6 @@ public class GameManager : MonoBehaviour
 
 	#region Life cycle
 	public Match Match { get; private set; }
-	public Board Board { get; private set; }
 
 	public static MatchConfig MatchConfig { get; set; } = MatchConfig.Default;
 
@@ -56,32 +55,22 @@ public class GameManager : MonoBehaviour
 		yield return new WaitForEndOfFrame();
 		yield return new WaitUntil(() => !cBrain.IsBlending);
 
-		ConstructMatch();
-	}
-
-	void ConstructMatch()
-	{
+		// Construct match
 		if(Match != null)
 		{
 			Destroy(Match);
 			Match = null;
 		}
-		if(Board != null)
+		switch(MatchConfig.mode)
 		{
-			Destroy(Board.gameObject);
-			Board = null;
+			case MatchMode.Traditional:
+				Match = matchAnchor.AddComponent<TraditionalMatch>();
+				break;
+
+			default:
+				throw new System.NotImplementedException("Match mode not yet implemented.");
 		}
-
-		Board = Instantiate(Resources.Load<GameObject>("Prefabs/Board"), matchAnchor.transform).GetComponent<Board>();
-		Board.Size = MatchConfig.boardSize;
-		Board.PlayerCount = MatchConfig.playerCount;
-
-		Match = MatchConfig.mode switch
-		{
-			MatchMode.Traditional => matchAnchor.AddComponent<TraditionalMatch>(),
-			// TODO: Training
-			_ => throw new System.NotImplementedException("Match mode not yet implemented."),
-		};
+		Match.Construct(MatchConfig.boardSize, GameUtility.MakePlayerInfos(MatchConfig.playerCount));
 	}
 
 	public void EndMatch()

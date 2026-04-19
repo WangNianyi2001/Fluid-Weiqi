@@ -14,18 +14,26 @@ public class TraditionalMatch : Match
 	protected override void OnPlace(Vector2 position)
 	{
 		base.OnPlace(position);
+
+		passCount = 0;
 		StepPlayerIndex();
 	}
 
 	protected override void OnPass()
 	{
 		Board.ClearPreview();
+
+		++passCount;
 		StepPlayerIndex();
 	}
 	#endregion
 
+	#region Life cycle
 	void StepPlayerIndex()
 	{
-		CurrentPlayerIndex = (CurrentPlayerIndex + 1) % Board.PlayerCount;
+		CurrentPlayerIndex = (CurrentPlayerIndex + 1) % PlayerCount;
 	}
+
+	int passCount = 0;
+	#endregion
 }

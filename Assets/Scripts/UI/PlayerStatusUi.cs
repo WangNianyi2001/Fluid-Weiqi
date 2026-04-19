@@ -1,34 +1,76 @@
 using UnityEngine;
 using UnityEngine.UI;
+using System.Collections.Generic;
 
 public class PlayerStatusUi : MonoBehaviour
 {
-	[SerializeField] private Graphic playerColorGraphic;
-	[SerializeField] private Text playerNameText;
-	[SerializeField] private Text areaValueText;
-	[SerializeField] private GameObject currentTurnIndicator;
+	Match Match => Match.Current;
 
-	public void SetPlayerName(string playerName)
+	#region Unity life cycle
+	protected void Awake()
 	{
-		if(playerNameText != null)
-			playerNameText.text = playerName;
+		Match.OnStateChanged += RefreshAreas;
+		Match.OnCurrentPlayerChanged += HighlightCurrentPlayer;
 	}
 
-	public void SetAreaValue(int areaPercent)
+	protected void Start()
 	{
-		if(areaValueText != null)
-			areaValueText.text = $"{areaPercent}%";
+		RebuildRows();
+		RefreshAreas();
+		HighlightCurrentPlayer(Match.CurrentPlayerIndex);
 	}
 
-	public void SetPlayerColor(Color color)
+	protected void OnDestroy()
 	{
-		if(playerColorGraphic != null)
-			playerColorGraphic.color = color;
+		if(Match != null)
+		{
+			Match.OnStateChanged -= RefreshAreas;
+			Match.OnCurrentPlayerChanged -= HighlightCurrentPlayer;
+		}
+	}
+	#endregion
+
+	#region Life cycle
+	void RebuildRows()
+	{
+		for(int count = transform.childCount, i = count; i > 0; --i)
+			Destroy(transform.GetChild(i - 1).gameObject);
+		rows.Clear();
+
+		for(int i = 0; i < Match.PlayerCount; ++i)
+		{
+			GameObject rowGo = Instantiate(rowPrefab, transform);
+			PlayerStatusRow row = rowGo.GetComponent<PlayerStatusRow>();
+			row.gameObject.name = $"PlayerRow{i}";
+			row.Name = Match.PlayerInfos[i].name;
+			row.Color = Match.PlayerInfos[i].color;
+			rows.Add(row);
+		}
 	}
 
-	public void SetCurrentTurn(bool isCurrentTurn)
+	void RefreshAreas()
 	{
-		if(currentTurnIndicator != null)
-			currentTurnIndicator.SetActive(isCurrentTurn);
+		if(rows.Count == 0)
+			return;
+
+		int[] areaByPlayer = Match.Board.GetPlayerAreaPixelsByDominance();
+		float total = Match.Board.ComputeResolution * Match.Board.ComputeResolution;
+		for(int i = 0; i < rows.Count; ++i)
+		{
+			rows[i].Name = Match.PlayerInfos[i].name;
+			rows[i].AreaValue = total > 0 ? areaByPlayer[i] / total : 0;
+		}
 	}
+	#endregion
+
+	#region Players
+	[SerializeField] GameObject rowPrefab;
+	readonly List<PlayerStatusRow> rows = new();
+
+	void HighlightCurrentPlayer(int currentPlayer)
+	{
+		for(int i = 0; i < rows.Count; ++i)
+			rows[i].IsCurrent = i == currentPlayer;
+	}
+	#endregion
 }

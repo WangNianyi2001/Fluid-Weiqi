@@ -6,7 +6,7 @@ public class MatchInput : MonoBehaviour
 	const float PreviewPositionEpsilon = 1e-3f;
 
 	Camera Camera => GameManager.Instance != null ? GameManager.Instance.Camera : null;
-	Board Board => GameManager.Instance != null ? GameManager.Instance.Board : null;
+	Board Board => Match.Current.Board;
 	LayerMask RaycastMask => Physics.DefaultRaycastLayers;
 	[SerializeField] private KeyCode passKey = KeyCode.None;
 

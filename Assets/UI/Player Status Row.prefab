@@ -15,7 +15,7 @@ GameObject:
   - component: {fileID: 4947352981791864595}
   - component: {fileID: 2656358643711476810}
   m_Layer: 5
-  m_Name: Player Status
+  m_Name: Player Status Row
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -114,8 +114,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f450999a319048c44a48ccb3c7b3ee16, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  playerColorGraphic: {fileID: 4694079584693719664}
-  playerNameText: {fileID: 7786482925319652477}
+  colorGraphic: {fileID: 4694079584693719664}
+  nameText: {fileID: 7786482925319652477}
   areaValueText: {fileID: 7487570896474196374}
   currentTurnIndicator: {fileID: 5360568095585985272}
 --- !u!114 &2656358643711476810

@@ -1,15 +1,13 @@
 using UnityEngine;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 public abstract class Match : MonoBehaviour
 {
 	public static Match Current { get; private set; }
 	public static Match Get<T>() where T : Match
 		=> Current as T;
-
-	#region References
-	public Board Board => GameManager.Instance.Board;
-	#endregion
 
 	#region Unity life cycle
 	protected void Awake()
@@ -44,11 +42,40 @@ public abstract class Match : MonoBehaviour
 			matchInput = null;
 		}
 
+		if(Board != null)
+		{
+			Destroy(Board.gameObject);
+			Board = null;
+		}
+
 		if(ui != null)
 		{
 			Destroy(ui);
 			ui = null;
 		}
+	}
+	#endregion
+
+	#region Life cycle
+	public void Construct(int boardSize, IReadOnlyList<PlayerInfo> playerInfos)
+	{
+		PlayerInfos = playerInfos.ToArray();
+
+		Board = Instantiate(Resources.Load<GameObject>("Prefabs/Board"), transform).GetComponent<Board>();
+		Board.PlayerCount = PlayerCount;
+		Board.Size = boardSize;
+	}
+	#endregion
+
+	#region Board
+	public Board Board { get; private set; }
+	public BoardState State => Board.State;
+
+	protected Action onStateChanged;
+	public event Action OnStateChanged
+	{
+		add => onStateChanged += value;
+		remove => onStateChanged -= value;
 	}
 	#endregion
 
@@ -86,14 +113,18 @@ public abstract class Match : MonoBehaviour
 	protected abstract GameObject MakeUi();
 	#endregion
 
-	#region Current player
+	#region Players
+	public IReadOnlyList<PlayerInfo> PlayerInfos { get; private set; }
+	public int PlayerCount => PlayerInfos.Count;
+	public IReadOnlyList<Color> PlayerColors => PlayerInfos.Select(i => i.color).ToArray();
+
 	int currentPlayerIndex = 0;
 	public int CurrentPlayerIndex
 	{
-		get => currentPlayerIndex % Board.PlayerCount;
+		get => currentPlayerIndex % PlayerCount;
 		protected set
 		{
-			int playerCount = Mathf.Max(1, Board.PlayerCount);
+			int playerCount = Mathf.Max(1, PlayerCount);
 			currentPlayerIndex = ((value % playerCount) + playerCount) % playerCount;
 			onCurrentPlayerChanged?.Invoke(currentPlayerIndex);
 		}
@@ -104,17 +135,6 @@ public abstract class Match : MonoBehaviour
 	{
 		add => onCurrentPlayerChanged += value;
 		remove => onCurrentPlayerChanged -= value;
-	}
-	#endregion
-
-	#region State
-	public BoardState State => Board.State;
-
-	protected Action onStateChanged;
-	public event Action OnStateChanged
-	{
-		add => onStateChanged += value;
-		remove => onStateChanged -= value;
 	}
 	#endregion
 }

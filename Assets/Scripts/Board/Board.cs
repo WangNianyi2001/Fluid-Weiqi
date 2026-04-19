@@ -3,15 +3,15 @@ using System.Collections.Generic;
 
 public class Board : MonoBehaviour
 {
+	Match Match => Match.Current;
+
 	#region Constants
 	const int RenderTextureSize = 1024;
 	const string DisplayShaderResourcePath = "Shaders/BoardDisplay";
-	const float GizmoHeightScale = 0.1f;
 	#endregion
 
 	#region Inspector
 	[SerializeField] new Renderer renderer;
-	[SerializeField] Color[] playerColors = new Color[] { Color.black, Color.white };
 	[SerializeField] int playerCount = 2;
 	[SerializeField] float size = 19;
 	[SerializeField] float stoneVariance = 1f / Mathf.Sqrt(32);
@@ -19,13 +19,11 @@ public class Board : MonoBehaviour
 	#endregion
 
 	#region Properties
-	public Renderer BoardRenderer => renderer;
-	public IReadOnlyList<Color> PlayerColors => playerColors;
-	public int ComputeResolution => BoardUtilities.ComputeResolution;
+	public int ComputeResolution => BoardUtility.ComputeResolution;
 	public int PlayerCount
 	{
 		get => playerCount;
-		set => playerCount = Mathf.Clamp(value, 2, BoardUtilities.MaxPlayers);
+		set => playerCount = Mathf.Clamp(value, 2, BoardUtility.MaxPlayers);
 	}
 	public float Size
 	{
@@ -42,7 +40,19 @@ public class Board : MonoBehaviour
 		get => threshold;
 		set => threshold = Mathf.Max(0, value);
 	}
-	public BoardState State => EnsureState();
+	public BoardState State
+	{
+		get
+		{
+			if(state == null)
+			{
+				state = new(playerCount);
+				ApplyBoardSettings(state, applySize: true);
+			}
+
+			return state;
+		}
+	}
 	#endregion
 
 	#region Runtime state
@@ -91,7 +101,7 @@ public class Board : MonoBehaviour
 
 	protected void Start()
 	{
-		ApplyBoardSettings(EnsureState(), applySize: true);
+		ApplyBoardSettings(State, applySize: true);
 		RefreshRendering();
 	}
 
@@ -105,6 +115,7 @@ public class Board : MonoBehaviour
 		if(!Application.isPlaying || state == null)
 			return;
 
+		state.PlayerCount = playerCount;
 		state.StoneVariance = stoneVariance;
 		state.Threshold = threshold;
 		RefreshRendering();
@@ -112,19 +123,9 @@ public class Board : MonoBehaviour
 	#endregion
 
 	#region State management
-	BoardState EnsureState()
-	{
-		if(state == null)
-		{
-			state = new(playerCount);
-			ApplyBoardSettings(state, applySize: true);
-		}
-
-		return state;
-	}
-
 	void ApplyBoardSettings(BoardState boardState, bool applySize)
 	{
+		PlayerCount = playerCount;
 		boardState.PlayerCount = playerCount;
 		if(applySize)
 			boardState.Size = size;
@@ -141,28 +142,28 @@ public class Board : MonoBehaviour
 
 	public void RefreshRendering()
 	{
-		RefreshRendering(EnsureState());
+		RefreshRendering(State);
 	}
 
 	public void RefreshRendering(BoardState renderState)
 	{
-		if(mainTexture == null || renderState == null || !BoardUtilities.IsInitialized)
+		if(mainTexture == null || renderState == null || !BoardUtility.IsInitialized)
 			return;
 
-		BoardUtilities.RenderAnalysis(renderState, playerColors);
+		BoardUtility.RenderAnalysis(renderState, Match.PlayerColors);
 		if(displayMaterial != null)
 		{
-			displayMaterial.SetTexture("_DistributionMap", BoardUtilities.DistributionMap);
+			displayMaterial.SetTexture("_DistributionMap", BoardUtility.DistributionMap);
 			displayMaterial.SetFloat("_Threshold", renderState.Threshold);
-			for(int player = 0; player < BoardUtilities.MaxPlayers; ++player)
+			for(int player = 0; player < BoardUtility.MaxPlayers; ++player)
 			{
-				Color playerColor = player < playerColors.Length ? playerColors[player] : Color.magenta;
+				Color playerColor = player < Match.PlayerCount ? Match.PlayerInfos[player].color : Color.magenta;
 				displayMaterial.SetColor($"_PlayerColor{player}", playerColor);
 			}
-			Graphics.Blit(BoardUtilities.DistributionMap, mainTexture, displayMaterial);
+			Graphics.Blit(BoardUtility.DistributionMap, mainTexture, displayMaterial);
 		}
 		else
-			Graphics.Blit(BoardUtilities.DistributionMap, mainTexture);
+			Graphics.Blit(BoardUtility.DistributionMap, mainTexture);
 	}
 	#endregion
 
@@ -211,20 +212,20 @@ public class Board : MonoBehaviour
 
 		RefreshRendering(placedPreviewState);
 
-		List<BoardUtilities.ChainStat> chainStats = GetChainStats();
-		Dictionary<int, BoardUtilities.ChainStat> chainStatsByRoot = new(chainStats.Count);
+		List<BoardUtility.ChainStat> chainStats = GetChainStats();
+		Dictionary<int, BoardUtility.ChainStat> chainStatsByRoot = new(chainStats.Count);
 		HashSet<int> capturedRoots = new();
 
 		for(int i = 0; i < chainStats.Count; ++i)
 		{
-			BoardUtilities.ChainStat chainStat = chainStats[i];
+			BoardUtility.ChainStat chainStat = chainStats[i];
 			chainStatsByRoot[chainStat.rootLabel] = chainStat;
 			if(chainStat.owner != playerIndex && chainStat.hasLiberty == 0)
 				capturedRoots.Add(chainStat.rootLabel);
 		}
 
 		int placedChainRoot = GetChainLabelAtLogicalPosition(placedPreviewState, logicalPosition);
-		bool placedChainHasLiberty = chainStatsByRoot.TryGetValue(placedChainRoot, out BoardUtilities.ChainStat placedChainStat) && placedChainStat.hasLiberty != 0;
+		bool placedChainHasLiberty = chainStatsByRoot.TryGetValue(placedChainRoot, out BoardUtility.ChainStat placedChainStat) && placedChainStat.hasLiberty != 0;
 		if(capturedRoots.Count == 0 && !placedChainHasLiberty)
 		{
 			RefreshRendering();
@@ -262,37 +263,37 @@ public class Board : MonoBehaviour
 	#region Analysis wrappers
 	public int[] GetPlayerAreaPixelsByDominance()
 	{
-		if(!BoardUtilities.IsInitialized)
-			return new int[PlayerCount];
-		return BoardUtilities.GetPlayerAreaPixelsByDominance(PlayerCount);
+		if(!BoardUtility.IsInitialized)
+			return new int[Match.PlayerCount];
+		return BoardUtility.GetPlayerAreaPixelsByDominance(Match.PlayerCount);
 	}
 
-	public List<BoardUtilities.ChainStat> GetChainStats()
+	public List<BoardUtility.ChainStat> GetChainStats()
 	{
-		if(!BoardUtilities.IsInitialized)
-			return new List<BoardUtilities.ChainStat>();
-		return BoardUtilities.GetChainStats();
+		if(!BoardUtility.IsInitialized)
+			return new List<BoardUtility.ChainStat>();
+		return BoardUtility.GetChainStats();
 	}
 
 	public int GetChainLabelAtLogicalPosition(BoardState renderState, Vector2 logicalPosition)
 	{
-		if(!BoardUtilities.IsInitialized)
+		if(!BoardUtility.IsInitialized)
 			return -1;
-		return BoardUtilities.GetChainLabelAtLogicalPosition(renderState, logicalPosition);
+		return BoardUtility.GetChainLabelAtLogicalPosition(renderState, logicalPosition);
 	}
 
 	public bool IsOccupiedAtLogicalPosition(BoardState renderState, Vector2 logicalPosition)
 	{
-		if(!BoardUtilities.IsInitialized)
+		if(!BoardUtility.IsInitialized)
 			return false;
-		return BoardUtilities.IsOccupiedAtLogicalPosition(renderState, logicalPosition);
+		return BoardUtility.IsOccupiedAtLogicalPosition(renderState, logicalPosition);
 	}
 
 	public List<List<int>> GetStoneChainLabels(BoardState renderState)
 	{
-		if(!BoardUtilities.IsInitialized)
+		if(!BoardUtility.IsInitialized)
 			return new List<List<int>>();
-		return BoardUtilities.GetStoneChainLabels(renderState);
+		return BoardUtility.GetStoneChainLabels(renderState);
 	}
 	#endregion
 

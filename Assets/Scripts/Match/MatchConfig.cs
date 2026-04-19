@@ -19,3 +19,9 @@ public struct MatchConfig
 		boardSize = 19,
 	};
 }
+
+public struct PlayerInfo
+{
+	public string name;
+	public Color color;
+}
