@@ -12,6 +12,10 @@ public class CreateMatchMenu : MonoBehaviour
 	};
 	public MatchMode MatchMode => matchModeIndexMap[matchModeDropdown.value];
 
+	[SerializeField] Text playerCountText;
+	[SerializeField] Slider playerCountSlider;
+	public int PlayerCount => Mathf.FloorToInt(playerCountSlider.value);
+
 	[SerializeField] Text boardSizeText;
 	[SerializeField] Slider boardSizeSlider;
 	public int BoardSize => Mathf.FloorToInt(boardSizeSlider.value);
@@ -20,6 +24,13 @@ public class CreateMatchMenu : MonoBehaviour
 	{
 		boardSizeSlider.onValueChanged.AddListener(_ => RefreshBoardSizeText());
 		RefreshBoardSizeText();
+		playerCountSlider.onValueChanged.AddListener(_ => RefreshPlayerCount());
+		RefreshPlayerCount();
+	}
+
+	void RefreshPlayerCount()
+	{
+		playerCountText.text = PlayerCount.ToString();
 	}
 
 	void RefreshBoardSizeText()
@@ -31,7 +42,8 @@ public class CreateMatchMenu : MonoBehaviour
 	{
 		GameManager.MatchConfig = new()
 		{
-			matchMode = MatchMode,
+			mode = MatchMode,
+			playerCount = PlayerCount,
 			boardSize = BoardSize,
 		};
 		GameManager.Instance.StartMatch();

@@ -2,10 +2,10 @@ using UnityEngine;
 
 public class MatchInput : MonoBehaviour
 {
-	const float PreviewPositionEpsilon = 0.0001f;
+	const float PreviewPositionEpsilon = 1e-3f;
 
-	[SerializeField] private Camera inputCamera;
-	[SerializeField] private LayerMask raycastMask = Physics.DefaultRaycastLayers;
+	Camera Camera => GameManager.Instance.Camera;
+	LayerMask RaycastMask => Physics.DefaultRaycastLayers;
 	[SerializeField] private float placementStrength = 1;
 
 	Match match;
@@ -15,13 +15,11 @@ public class MatchInput : MonoBehaviour
 	protected void Awake()
 	{
 		match = GetComponent<Match>();
-		if(inputCamera == null)
-			inputCamera = Camera.main;
 	}
 
 	protected void Update()
 	{
-		if(inputCamera == null)
+		if(Camera == null)
 		{
 			match.ClearPreview();
 			return;
@@ -74,8 +72,8 @@ public class MatchInput : MonoBehaviour
 			hit = default;
 			return false;
 		}
-		Ray ray = inputCamera.ScreenPointToRay(mousePosition);
-		if(!Physics.Raycast(ray, out hit, Mathf.Infinity, raycastMask, QueryTriggerInteraction.Ignore))
+		Ray ray = Camera.ScreenPointToRay(mousePosition);
+		if(!Physics.Raycast(ray, out hit, Mathf.Infinity, RaycastMask, QueryTriggerInteraction.Ignore))
 			return false;
 
 		return hit.collider.transform.IsChildOf(match.Board.transform);

@@ -1,36 +1,56 @@
 using UnityEngine;
-using System.Collections.Generic;
 using System;
 
 public abstract class Match : MonoBehaviour
 {
+	public static Match Current { get; private set; }
+	public static Match Get<T>() where T : Match
+		=> Current as T;
+
 	#region References
-	[SerializeField] Board board;
-	public Board Board => board;
+	public Board Board => GameManager.Instance.Board;
 	public BoardState State => Board.State;
 	#endregion
 
 	#region Unity life cycle
 	protected void Awake()
 	{
-		board = GetComponentInChildren<Board>();
+		Current = this;
+
 		gameObject.AddComponent<MatchInput>();
 	}
 
 	protected void Start()
 	{
+		uiGo = MakeUi();
 		CurrentPlayerIndex = 0;
 	}
+
+	protected void OnDestroy()
+	{
+		if(uiGo != null)
+		{
+			Destroy(uiGo);
+			uiGo = null;
+		}
+	}
+	#endregion
+
+	#region UI
+	GameObject uiGo;
+
+	protected abstract GameObject MakeUi();
 	#endregion
 
 	#region Current player
 	[SerializeField] int currentPlayerIndex = 0;
 	public int CurrentPlayerIndex
 	{
-		get => currentPlayerIndex;
+		get => currentPlayerIndex % Board.PlayerCount;
 		set
 		{
-			currentPlayerIndex = Mathf.Clamp(value, 0, Board.PlayerCount - 1);
+			int playerCount = Mathf.Max(1, Board.PlayerCount);
+			currentPlayerIndex = ((value % playerCount) + playerCount) % playerCount;
 			Board.RefreshRendering();
 			StateCommitted?.Invoke();
 			CurrentPlayerChanged?.Invoke(currentPlayerIndex);
@@ -41,60 +61,20 @@ public abstract class Match : MonoBehaviour
 
 	#region Preview
 	public event Action StateCommitted;
-	BoardState previewState;
-	bool hasPreview;
 
 	public void ClearPreview()
 	{
-		if(!hasPreview)
-			return;
-
-		hasPreview = false;
-		previewState = null;
-		Board.RefreshRendering();
+		Board.ClearPreview();
 	}
 	#endregion
 
 	#region Stone placement
 	public bool TryPlaceStone(Vector2 logicalPosition, float strength = 1)
 	{
-		Board.RefreshRendering();
-
-		if(Board.IsOccupiedAtLogicalPosition(State, logicalPosition))
+		if(!Board.TryPlaceStone(currentPlayerIndex, logicalPosition, out int nextPlayerIndex, strength))
 			return false;
 
-		if(!State.PeekStonePlacement(currentPlayerIndex, logicalPosition, out BoardState previewState, strength))
-			return false;
-
-		Board.RefreshRendering(previewState);
-
-		List<Board.ChainStat> chainStats = Board.GetChainStats();
-		Dictionary<int, Board.ChainStat> chainStatsByRoot = new(chainStats.Count);
-		HashSet<int> capturedRoots = new();
-		for(int i = 0; i < chainStats.Count; ++i)
-		{
-			Board.ChainStat chainStat = chainStats[i];
-			chainStatsByRoot[chainStat.RootLabel] = chainStat;
-			if(chainStat.Owner != currentPlayerIndex && !chainStat.HasLiberty)
-				capturedRoots.Add(chainStat.RootLabel);
-		}
-
-		int placedChainRoot = Board.GetChainLabelAtLogicalPosition(previewState, logicalPosition);
-		bool placedChainHasLiberty = chainStatsByRoot.TryGetValue(placedChainRoot, out Board.ChainStat placedChainStat) && placedChainStat.HasLiberty;
-		if(capturedRoots.Count == 0 && !placedChainHasLiberty)
-		{
-			Board.RefreshRendering();
-			return false;
-		}
-
-		if(capturedRoots.Count > 0)
-			RemoveCapturedStones(previewState, capturedRoots);
-
-		Board.SetState(previewState);
-		hasPreview = false;
-		previewState = null;
-
-		currentPlayerIndex = (currentPlayerIndex + 1) % Board.PlayerCount;
+		currentPlayerIndex = nextPlayerIndex;
 		StateCommitted?.Invoke();
 		CurrentPlayerChanged?.Invoke(currentPlayerIndex);
 		return true;
@@ -102,41 +82,7 @@ public abstract class Match : MonoBehaviour
 
 	public bool TryPreviewStone(Vector2 logicalPosition, float strength = 1)
 	{
-		Board.RefreshRendering();
-
-		if(Board.IsOccupiedAtLogicalPosition(State, logicalPosition))
-		{
-			ClearPreview();
-			return false;
-		}
-
-		if(!State.PeekStonePlacement(currentPlayerIndex, logicalPosition, out BoardState newState, strength))
-		{
-			ClearPreview();
-			return false;
-		}
-
-		hasPreview = true;
-		previewState = newState;
-		Board.RefreshRendering(previewState);
-		return true;
-	}
-
-	void RemoveCapturedStones(BoardState renderState, HashSet<int> capturedRoots)
-	{
-		List<List<int>> stoneChainLabels = Board.GetStoneChainLabels(renderState);
-		for(int player = 0; player < renderState.PlayerCount; ++player)
-		{
-			if(player == currentPlayerIndex)
-				continue;
-
-			List<int> playerLabels = stoneChainLabels[player];
-			for(int stoneIndex = playerLabels.Count - 1; stoneIndex >= 0; --stoneIndex)
-			{
-				if(capturedRoots.Contains(playerLabels[stoneIndex]))
-					renderState.RemoveStoneAt(player, stoneIndex);
-			}
-		}
+		return Board.TryPreviewStone(currentPlayerIndex, logicalPosition, strength);
 	}
 	#endregion
 }

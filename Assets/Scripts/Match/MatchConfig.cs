@@ -9,12 +9,13 @@ public enum MatchMode
 
 public struct MatchConfig
 {
-	public MatchMode matchMode;
+	public MatchMode mode;
+	public int playerCount;
 	public int boardSize;
 
 	public static MatchConfig Default => new()
 	{
-		matchMode = MatchMode.Training,
+		mode = MatchMode.Training,
 		boardSize = 19,
 	};
 }

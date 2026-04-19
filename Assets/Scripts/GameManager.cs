@@ -7,7 +7,8 @@ public class GameManager : MonoBehaviour
 	public static GameManager Instance { get; private set; }
 
 	#region References
-	[SerializeField] CinemachineBrain cBrain;
+	public Camera Camera { get; private set; }
+	CinemachineBrain cBrain;
 	[SerializeField] GameObject matchAnchor;
 	#endregion
 
@@ -15,7 +16,19 @@ public class GameManager : MonoBehaviour
 	protected void Awake()
 	{
 		Instance = this;
-		cBrain = Camera.main.gameObject.GetComponent<CinemachineBrain>();
+		if(Camera == null)
+			Camera = Camera.main;
+		cBrain = Camera.gameObject.GetComponent<CinemachineBrain>();
+
+		BoardUtilities.Initialize();
+	}
+
+	protected void OnDestroy()
+	{
+		if(Instance == this)
+			Instance = null;
+
+		BoardUtilities.Dispose();
 	}
 
 	protected void Start()
@@ -25,14 +38,14 @@ public class GameManager : MonoBehaviour
 	#endregion
 
 	#region Life cycle
-	Match match;
-	Board board;
+	public Match Match { get; private set; }
+	public Board Board { get; private set; }
 
 	public static MatchConfig MatchConfig { get; set; } = MatchConfig.Default;
 
 	public void StartMatch()
 	{
-		if(MatchConfig.matchMode == MatchMode.Undefined)
+		if(MatchConfig.mode == MatchMode.Undefined)
 			throw new System.ArgumentOutOfRangeException("Cannot start match, match mode is undefined.");
 		StartCoroutine(StartMatchCoroutine());
 	}
@@ -48,21 +61,22 @@ public class GameManager : MonoBehaviour
 
 	void ConstructMatch()
 	{
-		if(match != null)
+		if(Match != null)
 		{
-			Destroy(match);
-			match = null;
+			Destroy(Match);
+			Match = null;
 		}
-		if(board != null)
+		if(Board != null)
 		{
-			Destroy(board.gameObject);
-			board = null;
+			Destroy(Board.gameObject);
+			Board = null;
 		}
 
-		board = Instantiate(Resources.Load<GameObject>("Prefabs/Board"), matchAnchor.transform).GetComponent<Board>();
-		board.Size = MatchConfig.boardSize;
+		Board = Instantiate(Resources.Load<GameObject>("Prefabs/Board"), matchAnchor.transform).GetComponent<Board>();
+		Board.Size = MatchConfig.boardSize;
+		Board.PlayerCount = MatchConfig.playerCount;
 
-		match = MatchConfig.matchMode switch
+		Match = MatchConfig.mode switch
 		{
 			MatchMode.Traditional => matchAnchor.AddComponent<TraditionalMatch>(),
 			// TODO: Training
