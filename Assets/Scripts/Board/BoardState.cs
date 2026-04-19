@@ -12,9 +12,10 @@ public struct StonePlacement
 
 public class BoardState
 {
-	public BoardState(int playerCount = 2)
+	public BoardState(int playerCount = 2, int size = 19)
 	{
 		PlayerCount = playerCount;
+		Size = size;
 	}
 
 	public BoardState(BoardState original)
@@ -45,9 +46,9 @@ public class BoardState
 		}
 	}
 
-	public float Size { get; set; } = 19;
-	public float StoneVariance { get; set; } = 1;
-	public float Threshold { get; set; } = 1f / Mathf.Sqrt(32);
+	public float Size { get; private set; } = 19;
+	public float StoneVariance { get; set; } = 1f / Mathf.Sqrt(32);
+	public float Threshold { get; set; } = .5f;
 
 	public void AddStone(int player, Vector2 position, float strength = 1)
 	{
@@ -57,8 +58,7 @@ public class BoardState
 		{
 			position = position,
 			strength = strength,
-		}
-		);
+		});
 	}
 
 	public void RemoveStoneAt(int player, int stoneIndex)

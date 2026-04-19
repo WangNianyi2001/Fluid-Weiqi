@@ -21,7 +21,7 @@ public class TraditionalMatch : Match
 
 	protected override void OnPass()
 	{
-		Board.ClearPreview();
+		Board.Current.ClearPreview();
 
 		++passCount;
 		StepPlayerIndex();

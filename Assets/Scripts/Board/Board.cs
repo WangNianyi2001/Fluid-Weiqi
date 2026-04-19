@@ -1,58 +1,27 @@
 using UnityEngine;
 using System.Collections.Generic;
+using UnityEngine.Rendering;
 
 public class Board : MonoBehaviour
 {
-	Match Match => Match.Current;
+	public static Board Current {  get; private set; }
 
 	#region Constants
 	const int RenderTextureSize = 1024;
 	const string DisplayShaderResourcePath = "Shaders/BoardDisplay";
+	const string GridMaterialResourcePath = "Materials/BoardGrid";
+	const string GridObjectName = "BoardGrid";
 	#endregion
 
 	#region Inspector
 	[SerializeField] new Renderer renderer;
-	[SerializeField] int playerCount = 2;
-	[SerializeField] float size = 19;
-	[SerializeField] float stoneVariance = 1f / Mathf.Sqrt(32);
-	[SerializeField] float threshold = .5f;
 	#endregion
 
 	#region Properties
+	public Color[] PlayerColors { get; set; }
+	public int PlayerCount => PlayerColors.Length;
 	public int ComputeResolution => BoardUtility.ComputeResolution;
-	public int PlayerCount
-	{
-		get => playerCount;
-		set => playerCount = Mathf.Clamp(value, 2, BoardUtility.MaxPlayers);
-	}
-	public float Size
-	{
-		get => size;
-		set => size = Mathf.Max(.001f, value);
-	}
-	public float StoneVariance
-	{
-		get => stoneVariance;
-		set => stoneVariance = Mathf.Max(.0001f, value);
-	}
-	public float Threshold
-	{
-		get => threshold;
-		set => threshold = Mathf.Max(0, value);
-	}
-	public BoardState State
-	{
-		get
-		{
-			if(state == null)
-			{
-				state = new(playerCount);
-				ApplyBoardSettings(state, applySize: true);
-			}
-
-			return state;
-		}
-	}
+	public BoardState State => state ??= new BoardState();
 	#endregion
 
 	#region Runtime state
@@ -61,19 +30,25 @@ public class Board : MonoBehaviour
 	bool hasPreview;
 	Material material;
 	Material displayMaterial;
+	Material gridMaterial;
 	RenderTexture mainTexture;
 	Shader displayShader;
+	GameObject gridGo;
 	#endregion
 
 	#region Unity life cycle
 	protected void Awake()
 	{
+		Current = this;
+
 		displayShader = Resources.Load<Shader>(DisplayShaderResourcePath);
 		mainTexture = CreateRenderTexture(CreateMainTextureDescriptor());
 
 		material = new(renderer.sharedMaterial);
 		renderer.material = material;
 		material.mainTexture = mainTexture;
+
+		InitializeGridOverlay();
 
 		if(displayShader != null)
 			displayMaterial = new Material(displayShader);
@@ -93,6 +68,18 @@ public class Board : MonoBehaviour
 			displayMaterial = null;
 		}
 
+		if(gridMaterial != null)
+		{
+			Destroy(gridMaterial);
+			gridMaterial = null;
+		}
+
+		if(gridGo != null)
+		{
+			Destroy(gridGo);
+			gridGo = null;
+		}
+
 		ReleaseRenderTexture(ref mainTexture);
 
 		hasPreview = false;
@@ -101,47 +88,21 @@ public class Board : MonoBehaviour
 
 	protected void Start()
 	{
-		ApplyBoardSettings(State, applySize: true);
-		RefreshRendering();
-	}
-
-	protected void OnValidate()
-	{
-		PlayerCount = playerCount;
-		Size = size;
-		StoneVariance = stoneVariance;
-		Threshold = threshold;
-
-		if(!Application.isPlaying || state == null)
-			return;
-
-		state.PlayerCount = playerCount;
-		state.StoneVariance = stoneVariance;
-		state.Threshold = threshold;
 		RefreshRendering();
 	}
 	#endregion
 
 	#region State management
-	void ApplyBoardSettings(BoardState boardState, bool applySize)
-	{
-		PlayerCount = playerCount;
-		boardState.PlayerCount = playerCount;
-		if(applySize)
-			boardState.Size = size;
-		boardState.StoneVariance = stoneVariance;
-		boardState.Threshold = threshold;
-	}
-
 	public void SetState(BoardState newState)
 	{
 		state = newState;
-		ApplyBoardSettings(state, applySize: true);
+		UpdateGridMaterialParameters();
 		RefreshRendering();
 	}
 
 	public void RefreshRendering()
 	{
+		UpdateGridMaterialParameters();
 		RefreshRendering(State);
 	}
 
@@ -150,14 +111,14 @@ public class Board : MonoBehaviour
 		if(mainTexture == null || renderState == null || !BoardUtility.IsInitialized)
 			return;
 
-		BoardUtility.RenderAnalysis(renderState, Match.PlayerColors);
+		BoardUtility.RenderAnalysis(renderState, PlayerColors);
 		if(displayMaterial != null)
 		{
 			displayMaterial.SetTexture("_DistributionMap", BoardUtility.DistributionMap);
 			displayMaterial.SetFloat("_Threshold", renderState.Threshold);
 			for(int player = 0; player < BoardUtility.MaxPlayers; ++player)
 			{
-				Color playerColor = player < Match.PlayerCount ? Match.PlayerInfos[player].color : Color.magenta;
+				Color playerColor = player < PlayerCount ? PlayerColors[player] : Color.magenta;
 				displayMaterial.SetColor($"_PlayerColor{player}", playerColor);
 			}
 			Graphics.Blit(BoardUtility.DistributionMap, mainTexture, displayMaterial);
@@ -167,7 +128,86 @@ public class Board : MonoBehaviour
 	}
 	#endregion
 
-	#region Game semantics
+	#region Grid overlay
+	void InitializeGridOverlay()
+	{
+		if(gridGo != null || gridMaterial != null)
+			return;
+
+		if(!TryGetSourceBoardMesh(out Mesh sourceMesh))
+			return;
+
+		Material gridMaterialAsset = Resources.Load<Material>(GridMaterialResourcePath);
+		if(gridMaterialAsset == null)
+		{
+			Debug.LogWarning($"Board grid material not found in Resources at '{GridMaterialResourcePath}'.", this);
+			return;
+		}
+
+		gridMaterial = new Material(gridMaterialAsset);
+
+		gridGo = new GameObject(GridObjectName);
+		gridGo.transform.SetParent(transform, false);
+		gridGo.layer = gameObject.layer;
+
+		MeshFilter gridFilter = gridGo.AddComponent<MeshFilter>();
+		gridFilter.sharedMesh = sourceMesh;
+
+		MeshRenderer gridRenderer = gridGo.AddComponent<MeshRenderer>();
+		gridRenderer.sharedMaterial = gridMaterial;
+		gridRenderer.shadowCastingMode = ShadowCastingMode.Off;
+		gridRenderer.receiveShadows = false;
+
+		UpdateGridMaterialParameters();
+	}
+
+	bool TryGetSourceBoardMesh(out Mesh sourceMesh)
+	{
+		sourceMesh = null;
+
+		MeshFilter sourceFilter = GetComponent<MeshFilter>();
+		if(sourceFilter == null)
+		{
+			Debug.LogWarning("Board requires a MeshFilter on the same GameObject to build grid overlay.", this);
+			return false;
+		}
+
+		sourceMesh = sourceFilter.sharedMesh;
+		if(sourceMesh == null)
+		{
+			Debug.LogWarning("Board MeshFilter has no shared mesh for grid overlay.", this);
+			return false;
+		}
+
+		return true;
+	}
+
+	void UpdateGridMaterialParameters()
+	{
+		if(gridMaterial == null)
+			return;
+
+		int boardSize = Mathf.Max(2, Mathf.RoundToInt(State.Size));
+		gridMaterial.SetFloat("_BoardSize", boardSize);
+		gridMaterial.SetFloat("_StarEdgeOffset", GetStarEdgeOffset(boardSize));
+	}
+
+	int GetStarEdgeOffset(int boardSize)
+	{
+		if(boardSize >= 15)
+			return 3;
+
+		if(boardSize >= 11)
+			return 3;
+
+		if(boardSize >= 9)
+			return 2;
+
+		return Mathf.Max(1, Mathf.RoundToInt((boardSize - 1) * 0.5f));
+	}
+	#endregion
+
+ 	#region Game semantics
 	public void ClearPreview()
 	{
 		if(!hasPreview)
@@ -264,8 +304,8 @@ public class Board : MonoBehaviour
 	public int[] GetPlayerAreaPixelsByDominance()
 	{
 		if(!BoardUtility.IsInitialized)
-			return new int[Match.PlayerCount];
-		return BoardUtility.GetPlayerAreaPixelsByDominance(Match.PlayerCount);
+			return new int[PlayerCount];
+		return BoardUtility.GetPlayerAreaPixelsByDominance(PlayerCount);
 	}
 
 	public List<BoardUtility.ChainStat> GetChainStats()

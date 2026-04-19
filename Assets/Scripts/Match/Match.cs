@@ -1,7 +1,6 @@
 using UnityEngine;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 
 public abstract class Match : MonoBehaviour
 {
@@ -42,12 +41,6 @@ public abstract class Match : MonoBehaviour
 			matchInput = null;
 		}
 
-		if(Board != null)
-		{
-			Destroy(Board.gameObject);
-			Board = null;
-		}
-
 		if(ui != null)
 		{
 			Destroy(ui);
@@ -56,21 +49,7 @@ public abstract class Match : MonoBehaviour
 	}
 	#endregion
 
-	#region Life cycle
-	public void Construct(int boardSize, IReadOnlyList<PlayerInfo> playerInfos)
-	{
-		PlayerInfos = playerInfos.ToArray();
-
-		Board = Instantiate(Resources.Load<GameObject>("Prefabs/Board"), transform).GetComponent<Board>();
-		Board.PlayerCount = PlayerCount;
-		Board.Size = boardSize;
-	}
-	#endregion
-
 	#region Board
-	public Board Board { get; private set; }
-	public BoardState State => Board.State;
-
 	protected Action onStateChanged;
 	public event Action OnStateChanged
 	{
@@ -84,22 +63,22 @@ public abstract class Match : MonoBehaviour
 
 	protected virtual void OnCursorEnter(Vector2 logicalPosition)
 	{
-		Board.TryPreviewStone(currentPlayerIndex, logicalPosition);
+		Board.Current.TryPreviewStone(currentPlayerIndex, logicalPosition);
 	}
 
 	protected virtual void OnCursorMove(Vector2 logicalPosition)
 	{
-		Board.TryPreviewStone(currentPlayerIndex, logicalPosition);
+		Board.Current.TryPreviewStone(currentPlayerIndex, logicalPosition);
 	}
 
 	protected virtual void OnCursorExit()
 	{
-		Board.ClearPreview();
+		Board.Current.ClearPreview();
 	}
 
 	protected virtual void OnPlace(Vector2 logicalPosition)
 	{
-		if(!Board.TryPlaceStone(currentPlayerIndex, logicalPosition))
+		if(!Board.Current.TryPlaceStone(currentPlayerIndex, logicalPosition))
 			return;
 		onStateChanged?.Invoke();
 	}
@@ -114,9 +93,8 @@ public abstract class Match : MonoBehaviour
 	#endregion
 
 	#region Players
-	public IReadOnlyList<PlayerInfo> PlayerInfos { get; private set; }
+	public IReadOnlyList<PlayerInfo> PlayerInfos { get; set; }
 	public int PlayerCount => PlayerInfos.Count;
-	public IReadOnlyList<Color> PlayerColors => PlayerInfos.Select(i => i.color).ToArray();
 
 	int currentPlayerIndex = 0;
 	public int CurrentPlayerIndex

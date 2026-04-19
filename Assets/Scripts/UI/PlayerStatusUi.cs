@@ -53,8 +53,8 @@ public class PlayerStatusUi : MonoBehaviour
 		if(rows.Count == 0)
 			return;
 
-		int[] areaByPlayer = Match.Board.GetPlayerAreaPixelsByDominance();
-		float total = Match.Board.ComputeResolution * Match.Board.ComputeResolution;
+		int[] areaByPlayer = Board.Current.GetPlayerAreaPixelsByDominance();
+		float total = Board.Current.ComputeResolution * Board.Current.ComputeResolution;
 		for(int i = 0; i < rows.Count; ++i)
 		{
 			rows[i].Name = Match.PlayerInfos[i].name;

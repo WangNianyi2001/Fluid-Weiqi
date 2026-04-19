@@ -6,7 +6,6 @@ public class MatchInput : MonoBehaviour
 	const float PreviewPositionEpsilon = 1e-3f;
 
 	Camera Camera => GameManager.Instance != null ? GameManager.Instance.Camera : null;
-	Board Board => Match.Current.Board;
 	LayerMask RaycastMask => Physics.DefaultRaycastLayers;
 	[SerializeField] private KeyCode passKey = KeyCode.None;
 
@@ -21,7 +20,7 @@ public class MatchInput : MonoBehaviour
 
 	protected void Update()
 	{
-		if(Camera == null || Board == null)
+		if(Camera == null || Board.Current == null)
 		{
 			EmitCursorExitIfNeeded();
 			return;
@@ -33,11 +32,11 @@ public class MatchInput : MonoBehaviour
 			return;
 		}
 
-		Vector2 logicalPosition = Board.WorldToLogicalPosition(hit.point);
+		Vector2 logicalPosition = Board.Current.WorldToLogicalPosition(hit.point);
 		bool freePlace = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
 		if(!freePlace)
 		{
-			float maxCoord = Board.Size - 1;
+			float maxCoord = Board.Current.State.Size - 1;
 			logicalPosition = new Vector2(
 				Mathf.Clamp(Mathf.Round(logicalPosition.x), 0, maxCoord),
 				Mathf.Clamp(Mathf.Round(logicalPosition.y), 0, maxCoord)
@@ -83,7 +82,7 @@ public class MatchInput : MonoBehaviour
 
 	bool TryGetBoardHit(out RaycastHit hit)
 	{
-		if(Board == null)
+		if(Board.Current == null)
 		{
 			hit = default;
 			return false;
@@ -99,6 +98,6 @@ public class MatchInput : MonoBehaviour
 		if(!Physics.Raycast(ray, out hit, Mathf.Infinity, RaycastMask, QueryTriggerInteraction.Ignore))
 			return false;
 
-		return hit.collider.transform.IsChildOf(Board.transform);
+		return hit.collider.transform.IsChildOf(Board.Current.transform);
 	}
 }

@@ -1,6 +1,7 @@
 using UnityEngine;
 using Cinemachine;
 using System.Collections;
+using System.Linq;
 
 public class GameManager : MonoBehaviour
 {
@@ -39,6 +40,7 @@ public class GameManager : MonoBehaviour
 
 	#region Life cycle
 	public Match Match { get; private set; }
+	public Board Board { get; private set; }
 
 	public static MatchConfig MatchConfig { get; set; } = MatchConfig.Default;
 
@@ -51,6 +53,21 @@ public class GameManager : MonoBehaviour
 
 	IEnumerator StartMatchCoroutine()
 	{
+		var playerInfos = GameUtility.MakePlayerInfos(MatchConfig.playerCount);
+
+		// Construct board
+		if(Board != null)
+		{
+			Destroy(Board.gameObject);
+			Board = null;
+		}
+
+		Board = Instantiate(Resources.Load<GameObject>("Prefabs/Board"), matchAnchor.transform).GetComponent<Board>();
+		Board.PlayerColors = playerInfos.Select(i => i.color).ToArray();
+		BoardState initialState = new(MatchConfig.playerCount, MatchConfig.boardSize);
+		Board.SetState(initialState);
+
+		// Move camera
 		matchAnchor.SetActive(true);
 		yield return new WaitForEndOfFrame();
 		yield return new WaitUntil(() => !cBrain.IsBlending);
@@ -70,7 +87,7 @@ public class GameManager : MonoBehaviour
 			default:
 				throw new System.NotImplementedException("Match mode not yet implemented.");
 		}
-		Match.Construct(MatchConfig.boardSize, GameUtility.MakePlayerInfos(MatchConfig.playerCount));
+		Match.PlayerInfos = playerInfos;
 	}
 
 	public void EndMatch()
