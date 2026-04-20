@@ -8,6 +8,58 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 6164630413460456552}
     m_Modifications:
+    - target: {fileID: 2349122921365427084, guid: 456b346b2c700cd4abcb48413019faf8, type: 3}
+      propertyPath: m_AnchorMax.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2349122921365427084, guid: 456b346b2c700cd4abcb48413019faf8, type: 3}
+      propertyPath: m_AnchorMin.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2349122921365427084, guid: 456b346b2c700cd4abcb48413019faf8, type: 3}
+      propertyPath: m_SizeDelta.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2349122921365427084, guid: 456b346b2c700cd4abcb48413019faf8, type: 3}
+      propertyPath: m_SizeDelta.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2349122921365427084, guid: 456b346b2c700cd4abcb48413019faf8, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2349122921365427084, guid: 456b346b2c700cd4abcb48413019faf8, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2534692991044490676, guid: 456b346b2c700cd4abcb48413019faf8, type: 3}
+      propertyPath: m_SizeDelta.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3399844638952756326, guid: 456b346b2c700cd4abcb48413019faf8, type: 3}
+      propertyPath: m_AnchorMax.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3399844638952756326, guid: 456b346b2c700cd4abcb48413019faf8, type: 3}
+      propertyPath: m_AnchorMin.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3399844638952756326, guid: 456b346b2c700cd4abcb48413019faf8, type: 3}
+      propertyPath: m_SizeDelta.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3399844638952756326, guid: 456b346b2c700cd4abcb48413019faf8, type: 3}
+      propertyPath: m_SizeDelta.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3399844638952756326, guid: 456b346b2c700cd4abcb48413019faf8, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3399844638952756326, guid: 456b346b2c700cd4abcb48413019faf8, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 6630367312946851258, guid: 456b346b2c700cd4abcb48413019faf8, type: 3}
       propertyPath: m_Name
       value: Pause Menu UI
