@@ -228,13 +228,11 @@ public static class BoardUtility
 
 	public static int GetStarEdgeOffset(int boardSize)
 	{
-		if(boardSize >= 15)
-			return 3;
 		if(boardSize >= 11)
 			return 3;
-		if(boardSize >= 9)
+		if(boardSize >= 5)
 			return 2;
-		return Mathf.Max(1, Mathf.RoundToInt((boardSize - 1) * 0.5f));
+		return 1;
 	}
 
 	#endregion

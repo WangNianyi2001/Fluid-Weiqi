@@ -81,27 +81,36 @@ Shader "FluidWeiqi/BoardGrid"
 				float edge = clamp(edgeOffset, 0.0, segmentCount);
 				float farEdge = segmentCount - edge;
 				float center = segmentCount * 0.5;
-				float hasCenter = step(abs(frac(center)), 1e-5) * step(9.0, lineCount);
+				float hasCenter = step(abs(frac(center)), 1e-5);
+				float onlyTengen = step(lineCount, 7.0);
+				float hideEdgeSideStars = step(lineCount, 13.0);
 
 				float radius = radiusRatio / segmentCount;
 				float softness = max(softnessRatio / segmentCount, 1e-6);
 				float alpha = 0.0;
 
-				alpha = max(alpha, EvalStar(uv, float2(edge / segmentCount, edge / segmentCount), radius, softness));
-				alpha = max(alpha, EvalStar(uv, float2(edge / segmentCount, farEdge / segmentCount), radius, softness));
-				alpha = max(alpha, EvalStar(uv, float2(farEdge / segmentCount, edge / segmentCount), radius, softness));
-				alpha = max(alpha, EvalStar(uv, float2(farEdge / segmentCount, farEdge / segmentCount), radius, softness));
+				if(onlyTengen < 0.5)
+				{
+					alpha = max(alpha, EvalStar(uv, float2(edge / segmentCount, edge / segmentCount), radius, softness));
+					alpha = max(alpha, EvalStar(uv, float2(edge / segmentCount, farEdge / segmentCount), radius, softness));
+					alpha = max(alpha, EvalStar(uv, float2(farEdge / segmentCount, edge / segmentCount), radius, softness));
+					alpha = max(alpha, EvalStar(uv, float2(farEdge / segmentCount, farEdge / segmentCount), radius, softness));
+				}
 
 				if(hasCenter > 0.5)
 				{
 					float centerUv = center / segmentCount;
-					float edgeUv = edge / segmentCount;
-					float farUv = farEdge / segmentCount;
 					alpha = max(alpha, EvalStar(uv, float2(centerUv, centerUv), radius, softness));
-					alpha = max(alpha, EvalStar(uv, float2(edgeUv, centerUv), radius, softness));
-					alpha = max(alpha, EvalStar(uv, float2(farUv, centerUv), radius, softness));
-					alpha = max(alpha, EvalStar(uv, float2(centerUv, edgeUv), radius, softness));
-					alpha = max(alpha, EvalStar(uv, float2(centerUv, farUv), radius, softness));
+
+					if(hideEdgeSideStars < 0.5)
+					{
+						float edgeUv = edge / segmentCount;
+						float farUv = farEdge / segmentCount;
+						alpha = max(alpha, EvalStar(uv, float2(edgeUv, centerUv), radius, softness));
+						alpha = max(alpha, EvalStar(uv, float2(farUv, centerUv), radius, softness));
+						alpha = max(alpha, EvalStar(uv, float2(centerUv, edgeUv), radius, softness));
+						alpha = max(alpha, EvalStar(uv, float2(centerUv, farUv), radius, softness));
+					}
 				}
 
 				return alpha;

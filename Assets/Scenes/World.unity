@@ -2829,7 +2829,7 @@ MonoBehaviour:
     m_HorizontalOverflow: 1
     m_VerticalOverflow: 1
     m_LineSpacing: 1
-  m_Text: "\u6D41\u4F53\n\u56F4\u68CB"
+  m_Text: "\u6DB2\u6001\n\u56F4\u68CB"
 --- !u!222 &1018922491
 CanvasRenderer:
   m_ObjectHideFlags: 0
@@ -5205,7 +5205,8 @@ MonoBehaviour:
     m_LineSpacing: 1
   m_Text: "\u2014 \u5236\u4F5C \u2014\n\n\u738B\u5FF5\u4E00\n\u54D4\u54E9\u54D4\u54E9
     @\u738B\u8001\u5934\u8BF4\nGitHub @WangNianyi2001\n\n\u2014 \u8D44\u4EA7\u6765\u6E90
-    \u2014\n\n\u5B57\u4F53\uFF1A\u971E\u9A9B\u6587\u6977\nUI \u7D20\u6750\uFF1AKenney"
+    \u2014\n\n\u5B57\u4F53\uFF1A\u971E\u9A9B\u6587\u6977\nUI \u7D20\u6750\uFF1AKenney\n\n\u2014
+    \u7248\u672C \u2014\n\n\u516C\u6D4B\u7248 v0.1.0"
 --- !u!222 &2068265934
 CanvasRenderer:
   m_ObjectHideFlags: 0
