@@ -21,6 +21,12 @@ public class GameManager : MonoBehaviour
 		if(Camera == null)
 			Camera = Camera.main;
 		cBrain = Camera.gameObject.GetComponent<CinemachineBrain>();
+
+		if(AudioManager.Instance == null)
+		{
+			var audioGo = new GameObject("AudioManager");
+			audioGo.AddComponent<AudioManager>();
+		}
 	}
 
 	protected void OnDestroy()

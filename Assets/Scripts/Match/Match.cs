@@ -103,6 +103,13 @@ public abstract class Match : MonoBehaviour
 		if(!LastPlacementSucceed)
 			return;
 
+		if(AudioManager.Instance != null)
+			AudioManager.Instance.PlayPlaceStoneSound();
+
+		int capturedStoneCount = CountCapturedStones(board.State, nextState);
+		if(capturedStoneCount > 0 && AudioManager.Instance != null)
+			AudioManager.Instance.PlayCaptureSound();
+
 		board.SetState(nextState);
 		board.ClearPreview();
 		onStateChanged?.Invoke();
@@ -206,6 +213,24 @@ public abstract class Match : MonoBehaviour
 	protected void StepPlayerIndex()
 	{
 		CurrentPlayerIndex = (CurrentPlayerIndex + 1) % PlayerCount;
+	}
+
+	int CountCapturedStones(BoardState oldState, BoardState newState)
+	{
+		int oldTotal = CountAllStones(oldState);
+		int newTotal = CountAllStones(newState);
+		return Mathf.Max(0, oldTotal - newTotal);
+	}
+
+	int CountAllStones(BoardState state)
+	{
+		int count = 0;
+		for(int player = 0; player < state.PlayerCount; ++player)
+		{
+			var stones = state.GetStones(player);
+			count += stones.Count;
+		}
+		return count;
 	}
 	#endregion
 }

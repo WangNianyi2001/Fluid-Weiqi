@@ -30,6 +30,9 @@ public class TraditionalMatch : Match
 	{
 		Board.Current.ClearPreview();
 
+		if(AudioManager.Instance != null)
+			AudioManager.Instance.PlaySkipSound();
+
 		++passCount;
 		if(passCount == PlayerCount)
 		{
