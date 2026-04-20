@@ -4,7 +4,7 @@ public class PauseMenuUi : MonoBehaviour
 {
 	[SerializeField] GameObject pauseMenu;
 
-	protected void Start()
+	protected void Awake()
 	{
 		pauseMenu.SetActive(false);
 	}
