@@ -53,17 +53,13 @@ public class PlayerStatusUi : MonoBehaviour
 		if(rows.Count == 0 || Board.Current == null)
 			return;
 
-		BoardUtility.BoardCaches caches = Board.Current.Caches;
-		if(caches == null || !caches.isInitialized)
-			return;
-
 		Color[] playerColors = new Color[Mathf.Min(Match.PlayerCount, BoardUtility.MaxPlayers)];
 		for(int i = 0; i < playerColors.Length; ++i)
 			playerColors[i] = Match.PlayerInfos[i].color;
-		BoardUtility.RenderAnalysis(caches, Board.Current.State, playerColors);
+		BoardUtility.RenderAnalysis(Board.Current.Caches, Board.Current.State, playerColors);
 
-		int[] areaByPlayer = BoardUtility.GetPlayerAreaPixelsByDominance(caches, Match.PlayerCount);
-		float total = BoardUtility.ComputeTextureSize * BoardUtility.ComputeTextureSize;
+		float[] areaByPlayer = BoardUtility.GetPlayerAreasByDominance(Board.Current, Match.PlayerCount);
+		float total = Mathf.Pow(Board.Current.State.Size, 2);
 		for(int i = 0; i < rows.Count; ++i)
 		{
 			rows[i].Name = Match.PlayerInfos[i].name;

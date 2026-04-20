@@ -7,10 +7,11 @@ public class MatchInput : MonoBehaviour
 
 	Camera Camera => GameManager.Instance != null ? GameManager.Instance.Camera : null;
 	LayerMask RaycastMask => Physics.DefaultRaycastLayers;
-	[SerializeField] private KeyCode passKey = KeyCode.None;
 
 	bool hasCursorPosition;
 	Vector2 lastCursorPosition;
+
+	bool shiftDown = false, capslocked = false;
 
 	public event Action<Vector2> OnCursorEnter;
 	public event Action<Vector2> OnCursorMove;
@@ -19,6 +20,18 @@ public class MatchInput : MonoBehaviour
 	public event Action OnPass;
 
 	protected void Update()
+	{
+		if(Input.GetKeyDown(KeyCode.CapsLock))
+			capslocked = !capslocked;
+		shiftDown = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+
+		if(Input.GetKeyDown(KeyCode.P))
+			OnPass?.Invoke();
+
+		ProcessMouse();
+	}
+
+	void ProcessMouse()
 	{
 		if(Camera == null || Board.Current == null)
 		{
@@ -33,7 +46,7 @@ public class MatchInput : MonoBehaviour
 		}
 
 		Vector2 logicalPosition = Board.Current.WorldToLogicalPosition(hit.point);
-		bool freePlace = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+		bool freePlace = shiftDown ^ capslocked;
 		if(!freePlace)
 		{
 			float maxCoord = Board.Current.State.Size - 1;
@@ -61,14 +74,6 @@ public class MatchInput : MonoBehaviour
 			OnPlace?.Invoke(logicalPosition);
 			OnCursorMove?.Invoke(logicalPosition);
 		}
-
-		if(passKey != KeyCode.None && Input.GetKeyDown(passKey))
-			OnPass?.Invoke();
-	}
-
-	public void EmitPass()
-	{
-		OnPass?.Invoke();
 	}
 
 	void EmitCursorExitIfNeeded()

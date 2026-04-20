@@ -10,7 +10,8 @@ public class GameManager : MonoBehaviour
 	#region References
 	public Camera Camera { get; private set; }
 	CinemachineBrain cBrain;
-	[SerializeField] GameObject matchAnchor;
+	[SerializeField] Transform matchAnchor;
+	[SerializeField] CinemachineVirtualCamera matchVCam;
 	#endregion
 
 	#region Unity life cycle
@@ -58,13 +59,13 @@ public class GameManager : MonoBehaviour
 			Board = null;
 		}
 
-		Board = Instantiate(Resources.Load<GameObject>("Prefabs/Board"), matchAnchor.transform).GetComponent<Board>();
+		Board = Instantiate(Resources.Load<GameObject>("Prefabs/Board"), matchAnchor).GetComponent<Board>();
 		Board.PlayerColors = playerInfos.Select(i => i.color).ToArray();
 		BoardState initialState = new(MatchConfig.playerCount, MatchConfig.boardSize);
 		Board.SetState(initialState);
 
 		// Move camera
-		matchAnchor.SetActive(true);
+		matchVCam.enabled = true;
 		yield return new WaitForEndOfFrame();
 		yield return new WaitUntil(() => !cBrain.IsBlending);
 
@@ -77,7 +78,7 @@ public class GameManager : MonoBehaviour
 		switch(MatchConfig.mode)
 		{
 			case MatchMode.Traditional:
-				Match = matchAnchor.AddComponent<TraditionalMatch>();
+				Match = matchAnchor.gameObject.AddComponent<TraditionalMatch>();
 				break;
 
 			default:
@@ -88,7 +89,13 @@ public class GameManager : MonoBehaviour
 
 	public void EndMatch()
 	{
-		matchAnchor.SetActive(false);
+		if(Match != null)
+		{
+			Destroy(Match);
+			Match = null;
+		}
+
+		matchVCam.enabled = false;
 	}
 
 	public void QuitGame()

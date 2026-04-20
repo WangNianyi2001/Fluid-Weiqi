@@ -13,13 +13,13 @@ public abstract class Match : MonoBehaviour
 	{
 		Current = this;
 
-		matchInput = gameObject.AddComponent<MatchInput>();
+		input = gameObject.AddComponent<MatchInput>();
 
-		matchInput.OnCursorEnter += OnCursorEnter;
-		matchInput.OnCursorMove += OnCursorMove;
-		matchInput.OnCursorExit += OnCursorExit;
-		matchInput.OnPlace += OnPlace;
-		matchInput.OnPass += OnPass;
+		input.OnCursorEnter += OnCursorEnter;
+		input.OnCursorMove += OnCursorMove;
+		input.OnCursorExit += OnCursorExit;
+		input.OnPlace += OnPlace;
+		input.OnPass += OnPass;
 	}
 
 	protected void Start()
@@ -30,15 +30,15 @@ public abstract class Match : MonoBehaviour
 
 	protected void OnDestroy()
 	{
-		if(matchInput != null)
+		if(input != null)
 		{
-			matchInput.OnCursorEnter -= OnCursorEnter;
-			matchInput.OnCursorMove -= OnCursorMove;
-			matchInput.OnCursorExit -= OnCursorExit;
-			matchInput.OnPlace -= OnPlace;
-			matchInput.OnPass -= OnPass;
+			input.OnCursorEnter -= OnCursorEnter;
+			input.OnCursorMove -= OnCursorMove;
+			input.OnCursorExit -= OnCursorExit;
+			input.OnPlace -= OnPlace;
+			input.OnPass -= OnPass;
 
-			matchInput = null;
+			input = null;
 		}
 
 		if(ui != null)
@@ -56,10 +56,13 @@ public abstract class Match : MonoBehaviour
 		add => onStateChanged += value;
 		remove => onStateChanged -= value;
 	}
+
+	protected bool LastPlacementSucceed { get; private set; } = false;
 	#endregion
 
 	#region Input
-	MatchInput matchInput;
+	MatchInput input;
+	protected MatchInput Input => input;
 
 	protected virtual void OnCursorEnter(Vector2 logicalPosition)
 	{
@@ -82,14 +85,16 @@ public abstract class Match : MonoBehaviour
 		if(board == null)
 			return;
 
-		if(!board.State.TryPlaceStone(
+		LastPlacementSucceed = board.State.TryPlaceStone(
 			currentPlayerIndex,
 			logicalPosition,
 			IsOccupiedAtLogicalPosition,
 			GetChainStats,
 			GetChainLabelAtLogicalPosition,
 			GetStoneChainLabels,
-			out BoardState nextState))
+			out BoardState nextState
+		);
+		if(!LastPlacementSucceed)
 			return;
 
 		board.SetState(nextState);

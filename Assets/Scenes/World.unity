@@ -4050,7 +4050,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 40cdefcda5292124eb60b4305c10e0de, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  matchAnchor: {fileID: 1440621940}
+  matchAnchor: {fileID: 1440621941}
+  matchVCam: {fileID: 525630133}
 --- !u!4 &1633328557
 Transform:
   m_ObjectHideFlags: 0

@@ -3,9 +3,12 @@ using UnityEngine;
 public class TraditionalMatch : Match
 {
 	#region UI
+	TraditionalGameUi ui;
+
 	protected override GameObject MakeUi()
 	{
 		var go = Instantiate(Resources.Load<GameObject>("Prefabs/Traditional Match UI"), transform);
+		ui = go.GetComponent<TraditionalGameUi>();
 		return go;
 	}
 	#endregion
@@ -15,8 +18,11 @@ public class TraditionalMatch : Match
 	{
 		base.OnPlace(position);
 
-		passCount = 0;
-		StepPlayerIndex();
+		if(LastPlacementSucceed)
+		{
+			passCount = 0;
+			StepPlayerIndex();
+		}
 	}
 
 	protected override void OnPass()
@@ -24,6 +30,14 @@ public class TraditionalMatch : Match
 		Board.Current.ClearPreview();
 
 		++passCount;
+		if(passCount == PlayerCount)
+		{
+			ui.ShowEnding();
+			Input.enabled = false;
+			return;
+		}
+		// TODO: Show pass UI
+
 		StepPlayerIndex();
 	}
 	#endregion

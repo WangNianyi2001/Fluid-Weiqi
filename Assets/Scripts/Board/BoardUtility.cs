@@ -120,16 +120,19 @@ public static class BoardUtility
 		RunChainStats(c);
 	}
 
-	public static int[] GetPlayerAreaPixelsByDominance(BoardCaches c, int playerCount)
+	public static float[] GetPlayerAreasByDominance(Board b, int playerCount)
 	{
-		int[] areaByPlayer = new int[playerCount];
+		var c = b.Caches;
+		float scale = Mathf.Pow(b.State.Size, 2) / Mathf.Pow(ComputeTextureSize, 2);
+
+		float[] areaByPlayer = new float[playerCount];
 		if(!c.isInitialized || c.areaPixelCountBuffer == null)
 			return areaByPlayer;
 
 		int[] raw = new int[MaxPlayers];
 		c.areaPixelCountBuffer.GetData(raw);
 		for(int i = 0; i < areaByPlayer.Length; ++i)
-			areaByPlayer[i] = raw[i];
+			areaByPlayer[i] = raw[i] * scale;
 		return areaByPlayer;
 	}
 
