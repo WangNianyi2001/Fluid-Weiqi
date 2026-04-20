@@ -17,9 +17,16 @@ public class MatchInput : MonoBehaviour
 	public event Action<Vector2> OnCursorMove;
 	public event Action OnCursorExit;
 	public event Action<Vector2> OnPlace;
+	public event Action<Vector2> OnRemove;
 	public event Action OnPass;
 
 	protected void Update()
+	{
+		ProcessKeyboard();
+		ProcessMouse();
+	}
+
+	void ProcessKeyboard()
 	{
 		if(Input.GetKeyDown(KeyCode.CapsLock))
 			capslocked = !capslocked;
@@ -27,8 +34,6 @@ public class MatchInput : MonoBehaviour
 
 		if(Input.GetKeyDown(KeyCode.P))
 			OnPass?.Invoke();
-
-		ProcessMouse();
 	}
 
 	void ProcessMouse()
@@ -72,6 +77,11 @@ public class MatchInput : MonoBehaviour
 		if(Input.GetMouseButtonDown(0))
 		{
 			OnPlace?.Invoke(logicalPosition);
+			OnCursorMove?.Invoke(logicalPosition);
+		}
+		if(Input.GetMouseButtonDown(1))
+		{
+			OnRemove?.Invoke(logicalPosition);
 			OnCursorMove?.Invoke(logicalPosition);
 		}
 	}

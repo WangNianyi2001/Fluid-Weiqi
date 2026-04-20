@@ -102,6 +102,31 @@ public class BoardState
 		return false;
 	}
 
+	public bool TryRemoveStoneAtLogicalPosition(Vector2 position, out BoardState newState)
+	{
+		newState = null;
+
+		if(position.x < 0 || position.x >= Size || position.y < 0 || position.y >= Size)
+			return false;
+
+		for(int player = 0; player < PlayerCount; ++player)
+		{
+			IReadOnlyList<StonePlacement> playerStones = stones[player];
+			for(int stoneIndex = 0; stoneIndex < playerStones.Count; ++stoneIndex)
+			{
+				StonePlacement stone = playerStones[stoneIndex];
+				if(stone.position == position)
+				{
+					newState = new(this);
+					newState.RemoveStoneAt(player, stoneIndex);
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
 	public bool PeekStonePlacement(int player, Vector2 position, out BoardState newState, float strength = 1)
 	{
 		if(player < 0 || player >= PlayerCount)

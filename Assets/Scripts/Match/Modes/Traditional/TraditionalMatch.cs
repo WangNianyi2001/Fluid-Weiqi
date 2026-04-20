@@ -25,6 +25,7 @@ public class TraditionalMatch : Match
 		}
 	}
 
+	int passCount = 0;
 	protected override void OnPass()
 	{
 		Board.Current.ClearPreview();
@@ -33,21 +34,12 @@ public class TraditionalMatch : Match
 		if(passCount == PlayerCount)
 		{
 			ui.ShowEnding();
-			Input.enabled = false;
+			InputEnabled = false;
 			return;
 		}
 		// TODO: Show pass UI
 
 		StepPlayerIndex();
 	}
-	#endregion
-
-	#region Life cycle
-	void StepPlayerIndex()
-	{
-		CurrentPlayerIndex = (CurrentPlayerIndex + 1) % PlayerCount;
-	}
-
-	int passCount = 0;
 	#endregion
 }

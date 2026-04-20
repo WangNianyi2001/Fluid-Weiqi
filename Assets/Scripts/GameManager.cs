@@ -65,6 +65,7 @@ public class GameManager : MonoBehaviour
 		Board.SetState(initialState);
 
 		// Move camera
+		matchVCam.gameObject.SetActive(true);
 		matchVCam.enabled = true;
 		yield return new WaitForEndOfFrame();
 		yield return new WaitUntil(() => !cBrain.IsBlending);
@@ -79,6 +80,10 @@ public class GameManager : MonoBehaviour
 		{
 			case MatchMode.Traditional:
 				Match = matchAnchor.gameObject.AddComponent<TraditionalMatch>();
+				break;
+
+			case MatchMode.Training:
+				Match = matchAnchor.gameObject.AddComponent<TrainingMatch>();
 				break;
 
 			default:

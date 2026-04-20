@@ -19,6 +19,7 @@ public abstract class Match : MonoBehaviour
 		input.OnCursorMove += OnCursorMove;
 		input.OnCursorExit += OnCursorExit;
 		input.OnPlace += OnPlace;
+		input.OnRemove += OnRemove;
 		input.OnPass += OnPass;
 	}
 
@@ -36,6 +37,7 @@ public abstract class Match : MonoBehaviour
 			input.OnCursorMove -= OnCursorMove;
 			input.OnCursorExit -= OnCursorExit;
 			input.OnPlace -= OnPlace;
+			input.OnRemove -= OnRemove;
 			input.OnPass -= OnPass;
 
 			input = null;
@@ -63,15 +65,20 @@ public abstract class Match : MonoBehaviour
 	#region Input
 	MatchInput input;
 	protected MatchInput Input => input;
-
-	protected virtual void OnCursorEnter(Vector2 logicalPosition)
+	public bool InputEnabled
 	{
-		TryPreviewStone(logicalPosition);
+		get => Input.enabled;
+		set => Input.enabled = value;
 	}
 
-	protected virtual void OnCursorMove(Vector2 logicalPosition)
+	protected virtual void OnCursorEnter(Vector2 position)
 	{
-		TryPreviewStone(logicalPosition);
+		TryPreviewStone(position);
+	}
+
+	protected virtual void OnCursorMove(Vector2 position)
+	{
+		TryPreviewStone(position);
 	}
 
 	protected virtual void OnCursorExit()
@@ -79,7 +86,7 @@ public abstract class Match : MonoBehaviour
 		Board.Current.ClearPreview();
 	}
 
-	protected virtual void OnPlace(Vector2 logicalPosition)
+	protected virtual void OnPlace(Vector2 position)
 	{
 		Board board = Board.Current;
 		if(board == null)
@@ -87,7 +94,7 @@ public abstract class Match : MonoBehaviour
 
 		LastPlacementSucceed = board.State.TryPlaceStone(
 			currentPlayerIndex,
-			logicalPosition,
+			position,
 			GetChainStats,
 			GetChainLabelAtLogicalPosition,
 			GetStoneChainLabels,
@@ -101,21 +108,23 @@ public abstract class Match : MonoBehaviour
 		onStateChanged?.Invoke();
 	}
 
+	protected virtual void OnRemove(Vector2 position) { }
+
 	protected virtual void OnPass() { }
 
-	bool TryPreviewStone(Vector2 logicalPosition)
+	bool TryPreviewStone(Vector2 position)
 	{
 		Board board = Board.Current;
 		if(board == null)
 			return false;
 
-		if(board.State.HasStoneOverlap(logicalPosition))
+		if(board.State.HasStoneOverlap(position))
 		{
 			board.ClearPreview();
 			return false;
 		}
 
-		if(!board.State.PeekStonePlacement(currentPlayerIndex, logicalPosition, out BoardState previewState))
+		if(!board.State.PeekStonePlacement(currentPlayerIndex, position, out BoardState previewState))
 		{
 			board.ClearPreview();
 			return false;
@@ -134,13 +143,13 @@ public abstract class Match : MonoBehaviour
 		return BoardUtility.GetChainStats(board.Caches);
 	}
 
-	int GetChainLabelAtLogicalPosition(BoardState renderState, Vector2 logicalPosition)
+	int GetChainLabelAtLogicalPosition(BoardState renderState, Vector2 position)
 	{
 		AnalyzeState(renderState);
 		Board board = Board.Current;
 		if(board == null || board.Caches == null)
 			return -1;
-		return BoardUtility.GetChainLabelAtLogicalPosition(board.Caches, renderState, logicalPosition);
+		return BoardUtility.GetChainLabelAtLogicalPosition(board.Caches, renderState, position);
 	}
 
 	List<List<int>> GetStoneChainLabels(BoardState renderState)
@@ -192,6 +201,11 @@ public abstract class Match : MonoBehaviour
 	{
 		add => onCurrentPlayerChanged += value;
 		remove => onCurrentPlayerChanged -= value;
+	}
+
+	protected void StepPlayerIndex()
+	{
+		CurrentPlayerIndex = (CurrentPlayerIndex + 1) % PlayerCount;
 	}
 	#endregion
 }
