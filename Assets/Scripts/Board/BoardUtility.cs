@@ -15,6 +15,13 @@ public static class BoardUtility
 		public int hasLiberty;
 	}
 
+	[StructLayout(LayoutKind.Sequential)]
+	struct GpuStonePlacement
+	{
+		public Vector2 position;
+		public float strength;
+	}
+
 	public sealed class BoardCaches
 	{
 		public RenderTexture distributionMap;
@@ -256,9 +263,15 @@ public static class BoardUtility
 					continue;
 
 				IReadOnlyList<StonePlacement> source = state.GetStones(player);
-				StonePlacement[] gpuStones = new StonePlacement[stoneCount];
+				GpuStonePlacement[] gpuStones = new GpuStonePlacement[stoneCount];
 				for(int i = 0; i < stoneCount; ++i)
-					gpuStones[i] = new StonePlacement { position = source[i].position, strength = source[i].strength };
+				{
+					gpuStones[i] = new GpuStonePlacement
+					{
+						position = source[i].position,
+						strength = source[i].strength,
+					};
+				}
 				stoneBuffers[player].SetData(gpuStones);
 			}
 

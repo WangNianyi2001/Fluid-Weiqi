@@ -7,12 +7,16 @@ using System.Runtime.InteropServices;
 [StructLayout(LayoutKind.Sequential)]
 public struct StonePlacement
 {
+	public int id;
 	public Vector2 position;
 	public float strength;
 }
 
 public class BoardState
 {
+	const float StoneCollisionDiameter = 1f - 1e-4f;
+	const float StoneCollisionDiameterSquared = StoneCollisionDiameter * StoneCollisionDiameter;
+
 	public BoardState(int playerCount = 2, int size = 19)
 	{
 		PlayerCount = playerCount;
@@ -25,10 +29,12 @@ public class BoardState
 		Size = original.Size;
 		StoneVariance = original.StoneVariance;
 		Threshold = original.Threshold;
+		nextStoneId = original.nextStoneId;
 		stones = original.stones.Select(ps => new List<StonePlacement>(ps)).ToList();
 	}
 
 	readonly List<List<StonePlacement>> stones = new();
+	int nextStoneId = 1;
 
 	public int PlayerCount
 	{
@@ -48,18 +54,19 @@ public class BoardState
 	}
 
 	public float Size { get; private set; } = 19;
-	public float StoneVariance { get; set; } = 1f / Mathf.Sqrt(32);
+	public float StoneVariance { get; set; } = 1f / Mathf.Sqrt(16);
 	public float Threshold { get; set; } = .5f;
 
 	public void AddStone(int player, Vector2 position, float strength = 1)
 	{
+		AddStone(player, CreateStone(position, strength));
+	}
+
+	void AddStone(int player, StonePlacement stone)
+	{
 		if(player < 0 || player >= PlayerCount)
 			throw new System.IndexOutOfRangeException("Player index our of range.");
-		stones[player].Add(new()
-		{
-			position = position,
-			strength = strength,
-		});
+		stones[player].Add(stone);
 	}
 
 	public void RemoveStoneAt(int player, int stoneIndex)
@@ -76,12 +83,23 @@ public class BoardState
 		return stones[player];
 	}
 
-	public bool PlaceStone(int player, Vector2 position, float strength = 1) {
-		if(!PeekStonePlacement(player, position, out _, strength))
-			return false;
+	public bool HasStoneOverlap(Vector2 position, int ignoredStoneId = -1)
+	{
+		for(int player = 0; player < PlayerCount; ++player)
+		{
+			IReadOnlyList<StonePlacement> playerStones = stones[player];
+			for(int stoneIndex = 0; stoneIndex < playerStones.Count; ++stoneIndex)
+			{
+				StonePlacement stone = playerStones[stoneIndex];
+				if(stone.id == ignoredStoneId)
+					continue;
 
-		AddStone(player, position, strength);
-		return true;
+				if((stone.position - position).sqrMagnitude < StoneCollisionDiameterSquared)
+					return true;
+			}
+		}
+
+		return false;
 	}
 
 	public bool PeekStonePlacement(int player, Vector2 position, out BoardState newState, float strength = 1)
@@ -112,7 +130,6 @@ public class BoardState
 	public bool TryPlaceStone(
 		int player,
 		Vector2 position,
-		Func<BoardState, Vector2, bool> isOccupiedAtLogicalPosition,
 		Func<BoardState, List<BoardUtility.ChainStat>> getChainStats,
 		Func<BoardState, Vector2, int> getChainLabelAtLogicalPosition,
 		Func<BoardState, List<List<int>>> getStoneChainLabels,
@@ -120,15 +137,13 @@ public class BoardState
 		float strength = 1)
 	{
 		newState = null;
-		if(isOccupiedAtLogicalPosition == null || getChainStats == null || getChainLabelAtLogicalPosition == null || getStoneChainLabels == null)
+		if(getChainStats == null || getChainLabelAtLogicalPosition == null || getStoneChainLabels == null)
 			throw new ArgumentNullException("BoardState.TryPlaceStone analysis callbacks must not be null.");
-
-		if(isOccupiedAtLogicalPosition(this, position))
-			return false;
 
 		if(!PeekStonePlacement(player, position, out BoardState placedPreviewState, strength))
 			return false;
 
+		StonePlacement placedStone = placedPreviewState.stones[player][placedPreviewState.stones[player].Count - 1];
 		List<BoardUtility.ChainStat> chainStats = getChainStats(placedPreviewState);
 		Dictionary<int, BoardUtility.ChainStat> chainStatsByRoot = new(chainStats.Count);
 		HashSet<int> capturedRoots = new();
@@ -150,8 +165,21 @@ public class BoardState
 		if(capturedRoots.Count > 0)
 			RemoveCapturedStones(placedPreviewState, capturedRoots, player, getStoneChainLabels);
 
+		if(placedPreviewState.HasStoneOverlap(placedStone.position, placedStone.id))
+			return false;
+
 		newState = placedPreviewState;
 		return true;
+	}
+
+	StonePlacement CreateStone(Vector2 position, float strength)
+	{
+		return new StonePlacement
+		{
+			id = nextStoneId++,
+			position = position,
+			strength = strength,
+		};
 	}
 
 	static void RemoveCapturedStones(

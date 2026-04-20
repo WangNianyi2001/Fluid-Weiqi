@@ -88,7 +88,6 @@ public abstract class Match : MonoBehaviour
 		LastPlacementSucceed = board.State.TryPlaceStone(
 			currentPlayerIndex,
 			logicalPosition,
-			IsOccupiedAtLogicalPosition,
 			GetChainStats,
 			GetChainLabelAtLogicalPosition,
 			GetStoneChainLabels,
@@ -110,7 +109,7 @@ public abstract class Match : MonoBehaviour
 		if(board == null)
 			return false;
 
-		if(IsOccupiedAtLogicalPosition(board.State, logicalPosition))
+		if(board.State.HasStoneOverlap(logicalPosition))
 		{
 			board.ClearPreview();
 			return false;
@@ -124,15 +123,6 @@ public abstract class Match : MonoBehaviour
 
 		board.ShowPreview(previewState);
 		return true;
-	}
-
-	bool IsOccupiedAtLogicalPosition(BoardState renderState, Vector2 logicalPosition)
-	{
-		AnalyzeState(renderState);
-		Board board = Board.Current;
-		if(board == null || board.Caches == null)
-			return false;
-		return BoardUtility.IsOccupiedAtLogicalPosition(board.Caches, renderState, logicalPosition);
 	}
 
 	List<BoardUtility.ChainStat> GetChainStats(BoardState renderState)

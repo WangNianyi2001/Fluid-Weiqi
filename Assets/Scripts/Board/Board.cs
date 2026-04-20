@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.Rendering;
+using System.Collections.Generic;
 
 public class Board : MonoBehaviour
 {
@@ -9,7 +10,11 @@ public class Board : MonoBehaviour
 	const int RenderTextureSize = 1024;
 	const string DisplayShaderResourcePath = "Shaders/BoardDisplay";
 	const string GridMaterialResourcePath = "Materials/BoardGrid";
+	const string StoneModelResourcePath = "Models/Stone";
+	const string StoneMaterialResourcePath = "Materials/Stone";
+	const string StoneTransparentMaterialResourcePath = "Materials/Stone-transparent";
 	const string GridObjectName = "BoardGrid";
+	const string StoneRootName = "Stones";
 	#endregion
 
 	#region Inspector
@@ -17,22 +22,43 @@ public class Board : MonoBehaviour
 	#endregion
 
 	#region Properties
-	public Color[] PlayerColors { get; set; }
-	public int PlayerCount => PlayerColors.Length;
+	public Color[] PlayerColors
+	{
+		get => playerColors;
+		set
+		{
+			playerColors = value;
+			RefreshStoneVisualMaterials();
+			RefreshStoneTransparentMaterials();
+			SyncStoneVisuals();
+		}
+	}
+	public int PlayerCount => PlayerColors != null ? PlayerColors.Length : 0;
 	public BoardState State => state ??= new BoardState();
 	public BoardUtility.BoardCaches Caches => caches;
 	#endregion
 
 	#region Runtime state
+	Color[] playerColors;
 	BoardState state;
 	bool hasPreview;
 	BoardUtility.BoardCaches caches;
 	Material material;
 	Material displayMaterial;
 	Material gridMaterial;
+	Material stoneMaterialTemplate;
+	Material[] stoneSharedMaterials;
+	Material stoneTransparentMaterialTemplate;
+	Material[] stoneSharedTransparentMaterials;
 	RenderTexture mainTexture;
 	Shader displayShader;
 	GameObject gridGo;
+	GameObject stoneRoot;
+	GameObject stonePrefab;
+	bool loggedMissingStonePrefab;
+	bool loggedMissingStoneMaterial;
+	readonly Dictionary<int, GameObject> stoneVisuals = new();
+	readonly Dictionary<int, GameObject> previewStoneVisuals = new();
 	#endregion
 
 	#region Unity life cycle
@@ -50,6 +76,7 @@ public class Board : MonoBehaviour
 		material.mainTexture = mainTexture;
 
 		InitializeGridOverlay();
+		InitializeStoneVisuals();
 
 		if(displayShader != null)
 			displayMaterial = new Material(displayShader);
@@ -81,6 +108,16 @@ public class Board : MonoBehaviour
 			gridGo = null;
 		}
 
+		DestroyStoneVisuals();
+		ClearPreviewStoneVisuals();
+		DestroyStoneMaterials();
+		DestroyTransparentStoneMaterials();
+		if(stoneRoot != null)
+		{
+			Destroy(stoneRoot);
+			stoneRoot = null;
+		}
+
 		ReleaseRenderTexture(ref mainTexture);
 
 		if(caches != null)
@@ -102,6 +139,10 @@ public class Board : MonoBehaviour
 	public void SetState(BoardState newState)
 	{
 		state = newState;
+		ClearPreviewStoneVisuals();
+		RefreshStoneVisualMaterials();
+		RefreshStoneTransparentMaterials();
+		SyncStoneVisuals();
 		UpdateGridMaterialParameters();
 		RefreshRendering();
 	}
@@ -201,6 +242,291 @@ public class Board : MonoBehaviour
 	}
 	#endregion
 
+	#region Stone visuals
+	void InitializeStoneVisuals()
+	{
+		stonePrefab = Resources.Load<GameObject>(StoneModelResourcePath);
+		stoneMaterialTemplate = Resources.Load<Material>(StoneMaterialResourcePath);
+		stoneTransparentMaterialTemplate = Resources.Load<Material>(StoneTransparentMaterialResourcePath);
+
+		stoneRoot = new GameObject(StoneRootName);
+		stoneRoot.transform.SetParent(transform, false);
+		stoneRoot.layer = gameObject.layer;
+
+		RefreshStoneVisualMaterials();
+		RefreshStoneTransparentMaterials();
+		SyncStoneVisuals();
+	}
+
+	void SyncStoneVisuals()
+	{
+		if(stoneRoot == null || state == null)
+			return;
+
+		HashSet<int> activeStoneIds = new();
+		for(int player = 0; player < state.PlayerCount; ++player)
+		{
+			Material playerMaterial = GetStoneMaterial(player);
+			IReadOnlyList<StonePlacement> playerStones = state.GetStones(player);
+			for(int stoneIndex = 0; stoneIndex < playerStones.Count; ++stoneIndex)
+			{
+				StonePlacement stone = playerStones[stoneIndex];
+				activeStoneIds.Add(stone.id);
+
+				GameObject visual = GetOrCreateStoneVisual(stone.id);
+				if(visual == null)
+					continue;
+
+				visual.transform.localPosition = LogicalToLocalPosition(stone.position);
+				visual.transform.localScale = StoneLocalScale();
+				ApplyStoneMaterial(visual, playerMaterial);
+			}
+		}
+
+		List<int> staleStoneIds = new();
+		foreach(KeyValuePair<int, GameObject> entry in stoneVisuals)
+		{
+			if(!activeStoneIds.Contains(entry.Key))
+				staleStoneIds.Add(entry.Key);
+		}
+
+		for(int i = 0; i < staleStoneIds.Count; ++i)
+		{
+			int stoneId = staleStoneIds[i];
+			Destroy(stoneVisuals[stoneId]);
+			stoneVisuals.Remove(stoneId);
+		}
+	}
+
+	GameObject GetOrCreateStoneVisual(int stoneId)
+	{
+		if(stoneVisuals.TryGetValue(stoneId, out GameObject visual) && visual != null)
+			return visual;
+
+		if(stonePrefab == null)
+		{
+			if(!loggedMissingStonePrefab)
+			{
+				Debug.LogWarning($"Board stone prefab not found in Resources at '{StoneModelResourcePath}'.", this);
+				loggedMissingStonePrefab = true;
+			}
+			return null;
+		}
+
+		visual = Instantiate(stonePrefab, stoneRoot.transform);
+		visual.name = $"Stone{stoneId}";
+		stoneVisuals[stoneId] = visual;
+		return visual;
+	}
+
+	void RefreshStoneVisualMaterials()
+	{
+		if(stoneMaterialTemplate == null)
+		{
+			if(!loggedMissingStoneMaterial)
+			{
+				Debug.LogWarning($"Board stone material not found in Resources at '{StoneMaterialResourcePath}'.", this);
+				loggedMissingStoneMaterial = true;
+			}
+			DestroyStoneMaterials();
+			return;
+		}
+
+		int materialCount = PlayerColors != null ? PlayerColors.Length : 0;
+		if(materialCount == 0)
+		{
+			DestroyStoneMaterials();
+			return;
+		}
+
+		if(stoneSharedMaterials == null || stoneSharedMaterials.Length != materialCount)
+		{
+			DestroyStoneMaterials();
+			stoneSharedMaterials = new Material[materialCount];
+			for(int player = 0; player < materialCount; ++player)
+				stoneSharedMaterials[player] = new Material(stoneMaterialTemplate);
+		}
+
+		for(int player = 0; player < materialCount; ++player)
+			stoneSharedMaterials[player].color = PlayerColors[player];
+	}
+
+	Material GetStoneMaterial(int player)
+	{
+		if(stoneSharedMaterials == null || player < 0 || player >= stoneSharedMaterials.Length)
+			return null;
+		return stoneSharedMaterials[player];
+	}
+
+	void ApplyStoneMaterial(GameObject visual, Material sharedMaterial)
+	{
+		if(visual == null || sharedMaterial == null)
+			return;
+
+		Renderer[] renderers = visual.GetComponentsInChildren<Renderer>(true);
+		for(int i = 0; i < renderers.Length; ++i)
+			renderers[i].sharedMaterial = sharedMaterial;
+	}
+
+	void DestroyStoneVisuals()
+	{
+		foreach(GameObject visual in stoneVisuals.Values)
+		{
+			if(visual != null)
+				Destroy(visual);
+		}
+		stoneVisuals.Clear();
+	}
+
+	void DestroyStoneMaterials()
+	{
+		if(stoneSharedMaterials == null)
+			return;
+
+		for(int i = 0; i < stoneSharedMaterials.Length; ++i)
+		{
+			if(stoneSharedMaterials[i] != null)
+				Destroy(stoneSharedMaterials[i]);
+		}
+		stoneSharedMaterials = null;
+	}
+
+	void SyncPreviewStoneVisuals(BoardState previewState)
+	{
+		if(stoneRoot == null || previewState == null)
+		{
+			ClearPreviewStoneVisuals();
+			return;
+		}
+
+		HashSet<int> committedIds = new();
+		if(state != null)
+		{
+			for(int player = 0; player < state.PlayerCount; ++player)
+			{
+				IReadOnlyList<StonePlacement> ps = state.GetStones(player);
+				for(int i = 0; i < ps.Count; ++i)
+					committedIds.Add(ps[i].id);
+			}
+		}
+
+		HashSet<int> newPreviewIds = new();
+		for(int player = 0; player < previewState.PlayerCount; ++player)
+		{
+			Material mat = GetStoneTransparentMaterial(player);
+			IReadOnlyList<StonePlacement> ps = previewState.GetStones(player);
+			for(int i = 0; i < ps.Count; ++i)
+			{
+				StonePlacement stone = ps[i];
+				if(committedIds.Contains(stone.id))
+					continue;
+
+				newPreviewIds.Add(stone.id);
+				GameObject visual = GetOrCreatePreviewStoneVisual(stone.id);
+				if(visual == null)
+					continue;
+
+				visual.transform.localPosition = LogicalToLocalPosition(stone.position);
+				visual.transform.localScale = StoneLocalScale();
+				ApplyStoneMaterial(visual, mat);
+			}
+		}
+
+		List<int> staleIds = new();
+		foreach(int id in previewStoneVisuals.Keys)
+		{
+			if(!newPreviewIds.Contains(id))
+				staleIds.Add(id);
+		}
+		for(int i = 0; i < staleIds.Count; ++i)
+		{
+			Destroy(previewStoneVisuals[staleIds[i]]);
+			previewStoneVisuals.Remove(staleIds[i]);
+		}
+	}
+
+	void ClearPreviewStoneVisuals()
+	{
+		foreach(GameObject visual in previewStoneVisuals.Values)
+		{
+			if(visual != null)
+				Destroy(visual);
+		}
+		previewStoneVisuals.Clear();
+	}
+
+	GameObject GetOrCreatePreviewStoneVisual(int stoneId)
+	{
+		if(previewStoneVisuals.TryGetValue(stoneId, out GameObject visual) && visual != null)
+			return visual;
+
+		if(stonePrefab == null)
+			return null;
+
+		visual = Instantiate(stonePrefab, stoneRoot.transform);
+		visual.name = $"PreviewStone{stoneId}";
+		previewStoneVisuals[stoneId] = visual;
+		return visual;
+	}
+
+	void RefreshStoneTransparentMaterials()
+	{
+		if(stoneTransparentMaterialTemplate == null)
+		{
+			DestroyTransparentStoneMaterials();
+			return;
+		}
+
+		int materialCount = PlayerColors != null ? PlayerColors.Length : 0;
+		if(materialCount == 0)
+		{
+			DestroyTransparentStoneMaterials();
+			return;
+		}
+
+		if(stoneSharedTransparentMaterials == null || stoneSharedTransparentMaterials.Length != materialCount)
+		{
+			DestroyTransparentStoneMaterials();
+			stoneSharedTransparentMaterials = new Material[materialCount];
+			for(int player = 0; player < materialCount; ++player)
+				stoneSharedTransparentMaterials[player] = new Material(stoneTransparentMaterialTemplate);
+		}
+
+		float templateAlpha = stoneTransparentMaterialTemplate.color.a;
+		for(int player = 0; player < materialCount; ++player)
+		{
+			Color c = PlayerColors[player];
+			c.a = templateAlpha;
+			stoneSharedTransparentMaterials[player].color = c;
+		}
+	}
+
+	Material GetStoneTransparentMaterial(int player)
+	{
+		if(stoneSharedTransparentMaterials == null || player < 0 || player >= stoneSharedTransparentMaterials.Length)
+			return null;
+		return stoneSharedTransparentMaterials[player];
+	}
+
+	void DestroyTransparentStoneMaterials()
+	{
+		if(stoneSharedTransparentMaterials == null)
+			return;
+
+		for(int i = 0; i < stoneSharedTransparentMaterials.Length; ++i)
+		{
+			if(stoneSharedTransparentMaterials[i] != null)
+				Destroy(stoneSharedTransparentMaterials[i]);
+		}
+		stoneSharedTransparentMaterials = null;
+	}
+
+	Vector3 StoneLocalScale()
+	{
+		return Vector3.one * (1f / Mathf.Max(1, Mathf.RoundToInt(State.Size) - 1));
+	}
+	#endregion
+
  	#region Preview
 	public void ClearPreview()
 	{
@@ -208,6 +534,7 @@ public class Board : MonoBehaviour
 			return;
 
 		hasPreview = false;
+		ClearPreviewStoneVisuals();
 		RefreshRendering();
 	}
 
@@ -215,9 +542,15 @@ public class Board : MonoBehaviour
 	{
 		hasPreview = stateToPreview != null;
 		if(stateToPreview == null)
+		{
+			ClearPreviewStoneVisuals();
 			RefreshRendering();
+		}
 		else
+		{
+			SyncPreviewStoneVisuals(stateToPreview);
 			RefreshRendering(stateToPreview);
+		}
 	}
 	#endregion
 
@@ -231,13 +564,17 @@ public class Board : MonoBehaviour
 
 	public Vector3 LogicalToWorldPosition(Vector2 logicalPosition)
 	{
+		return transform.TransformPoint(LogicalToLocalPosition(logicalPosition));
+	}
+
+	Vector3 LogicalToLocalPosition(Vector2 logicalPosition)
+	{
 		float span = State.Size - 1;
-		Vector3 localPosition = new(
+		return new Vector3(
 			logicalPosition.x / span - .5f,
 			logicalPosition.y / span - .5f,
 			0
 		);
-		return transform.TransformPoint(localPosition);
 	}
 	#endregion
 

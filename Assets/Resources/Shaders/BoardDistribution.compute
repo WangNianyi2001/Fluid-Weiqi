@@ -255,27 +255,28 @@ void CSPropagateLabels(uint3 id : SV_DispatchThreadID)
 	}
 
 	int best = _LabelBufferRead[index];
-    int current = best;
+	int current = best;
 
-	for(int dy = -1; dy <= 1; ++dy)
+	int2 neighbors[4] = {
+		coord + int2(1, 0),
+		coord + int2(-1, 0),
+		coord + int2(0, 1),
+		coord + int2(0, -1)
+	};
+
+	for(int i = 0; i < 4; ++i)
 	{
-		for(int dx = -1; dx <= 1; ++dx)
-		{
-			if(dx == 0 && dy == 0)
-				continue;
+		int2 neighbor = neighbors[i];
+		if(!InBounds(neighbor))
+			continue;
 
-			int2 neighbor = coord + int2(dx, dy);
-			if(!InBounds(neighbor))
-				continue;
+		int neighborIndex = ToIndex(neighbor);
+		if(_OwnerBuffer[neighborIndex] != owner)
+			continue;
 
-			int neighborIndex = ToIndex(neighbor);
-			if(_OwnerBuffer[neighborIndex] != owner)
-				continue;
-
-			int neighborLabel = _LabelBufferRead[neighborIndex];
-			if(neighborLabel >= 0)
-				best = min(best, neighborLabel);
-		}
+		int neighborLabel = _LabelBufferRead[neighborIndex];
+		if(neighborLabel >= 0)
+			best = min(best, neighborLabel);
 	}
 
 	_LabelBufferWrite[index] = best;
