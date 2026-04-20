@@ -106,7 +106,7 @@ public abstract class Match : MonoBehaviour
 		if(AudioManager.Instance != null)
 			AudioManager.Instance.PlayPlaceStoneSound();
 
-		int capturedStoneCount = CountCapturedStones(board.State, nextState);
+		int capturedStoneCount = CountCapturedStones(board.State, nextState, currentPlayerIndex);
 		if(capturedStoneCount > 0 && AudioManager.Instance != null)
 			AudioManager.Instance.PlayCaptureSound();
 
@@ -215,18 +215,21 @@ public abstract class Match : MonoBehaviour
 		CurrentPlayerIndex = (CurrentPlayerIndex + 1) % PlayerCount;
 	}
 
-	int CountCapturedStones(BoardState oldState, BoardState newState)
+	int CountCapturedStones(BoardState oldState, BoardState newState, int placedPlayer)
 	{
-		int oldTotal = CountAllStones(oldState);
-		int newTotal = CountAllStones(newState);
-		return Mathf.Max(0, oldTotal - newTotal);
+		int oldOpponentTotal = CountOpponentStones(oldState, placedPlayer);
+		int newOpponentTotal = CountOpponentStones(newState, placedPlayer);
+		return Mathf.Max(0, oldOpponentTotal - newOpponentTotal);
 	}
 
-	int CountAllStones(BoardState state)
+	int CountOpponentStones(BoardState state, int excludedPlayer)
 	{
 		int count = 0;
 		for(int player = 0; player < state.PlayerCount; ++player)
 		{
+			if(player == excludedPlayer)
+				continue;
+
 			var stones = state.GetStones(player);
 			count += stones.Count;
 		}

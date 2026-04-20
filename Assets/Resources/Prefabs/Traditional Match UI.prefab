@@ -399,6 +399,10 @@ PrefabInstance:
       propertyPath: m_Text
       value: "\u518D\u5F08\u4E00\u5C40"
       objectReference: {fileID: 0}
+    - target: {fileID: 6798141684350348108, guid: 42531c0587953c44ca809b3d5c3cd133, type: 3}
+      propertyPath: m_FontData.m_MinSize
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 7740060119042267361, guid: 42531c0587953c44ca809b3d5c3cd133, type: 3}
       propertyPath: m_Name
       value: Rematch
@@ -686,6 +690,10 @@ PrefabInstance:
     - target: {fileID: 6798141684350348108, guid: 42531c0587953c44ca809b3d5c3cd133, type: 3}
       propertyPath: m_Text
       value: "\u56DE\u5230\u83DC\u5355"
+      objectReference: {fileID: 0}
+    - target: {fileID: 6798141684350348108, guid: 42531c0587953c44ca809b3d5c3cd133, type: 3}
+      propertyPath: m_FontData.m_MinSize
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 7740060119042267361, guid: 42531c0587953c44ca809b3d5c3cd133, type: 3}
       propertyPath: m_Name
