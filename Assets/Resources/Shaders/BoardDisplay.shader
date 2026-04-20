@@ -4,7 +4,15 @@ Shader "FluidWeiqi/BoardDisplay"
 	{
 		_DistributionMap ("Distribution Map", 2D) = "black" {}
 		_Threshold ("Threshold", Float) = 0.35355339
+		_ThresholdSoftness ("Threshold Softness", Range(0.0001, 0.2)) = 0.02
 		_BlurStrength ("Blur Strength", Range(0, 1)) = 0.6
+		_BaseAlpha ("Base Alpha", Range(0, 1)) = 0.28
+		_DominanceAlphaBoost ("Dominance Alpha Boost", Range(0, 2)) = 0.62
+		_MaxAlpha ("Max Alpha", Range(0, 1)) = 0.72
+		_BorderColor ("Border Color", Color) = (0.12, 0.12, 0.12, 1)
+		_BorderStrength ("Border Strength", Range(0, 2)) = 1
+		_BorderWidth ("Border Width (Texel)", Range(0.5, 3)) = 1
+		_BorderSoftness ("Border Softness", Range(0.0001, 1)) = 0.25
 		_PlayerColor0 ("Player Color 0", Color) = (0, 0, 0, 1)
 		_PlayerColor1 ("Player Color 1", Color) = (1, 1, 1, 1)
 		_PlayerColor2 ("Player Color 2", Color) = (0.8, 0.2, 0.2, 1)
@@ -13,10 +21,11 @@ Shader "FluidWeiqi/BoardDisplay"
 
 	SubShader
 	{
-		Tags { "RenderType" = "Opaque" "Queue" = "Geometry" }
+		Tags { "RenderType" = "Transparent" "Queue" = "Transparent" }
 		Cull Off
 		ZWrite Off
-		ZTest Always
+		ZTest LEqual
+		Blend SrcAlpha OneMinusSrcAlpha
 
 		Pass
 		{
@@ -40,7 +49,15 @@ Shader "FluidWeiqi/BoardDisplay"
 			sampler2D _DistributionMap;
 			float4 _DistributionMap_TexelSize;
 			float _Threshold;
+			float _ThresholdSoftness;
 			float _BlurStrength;
+			float _BaseAlpha;
+			float _DominanceAlphaBoost;
+			float _MaxAlpha;
+			float4 _BorderColor;
+			float _BorderStrength;
+			float _BorderWidth;
+			float _BorderSoftness;
 			float4 _PlayerColor0;
 			float4 _PlayerColor1;
 			float4 _PlayerColor2;
@@ -84,12 +101,11 @@ Shader "FluidWeiqi/BoardDisplay"
 				return lerp(raw, blurred, _BlurStrength);
 			}
 
-			fixed4 frag(v2f input) : SV_Target
+			void FindBestPlayer(float4 density, out int bestPlayer, out float maxValue, out float totalDensity)
 			{
-				float4 density = SampleSmoothedDensity(input.uv);
-				float totalDensity = density.x + density.y + density.z + density.w;
-				float maxValue = density.x;
-				int bestPlayer = 0;
+				totalDensity = density.x + density.y + density.z + density.w;
+				maxValue = density.x;
+				bestPlayer = 0;
 
 				if(density.y > maxValue)
 				{
@@ -108,11 +124,63 @@ Shader "FluidWeiqi/BoardDisplay"
 					maxValue = density.w;
 					bestPlayer = 3;
 				}
+			}
 
-				float mask = step(_Threshold, totalDensity);
-				float4 color = GetPlayerColor(bestPlayer);
-				color *= mask;
-				return color;
+			float CoverageFromTotalDensity(float totalDensity)
+			{
+				float minT = _Threshold - _ThresholdSoftness;
+				float maxT = _Threshold + _ThresholdSoftness;
+				return smoothstep(minT, maxT, totalDensity);
+			}
+
+			fixed4 frag(v2f input) : SV_Target
+			{
+				float4 density = SampleSmoothedDensity(input.uv);
+				int bestPlayer;
+				float maxValue;
+				float totalDensity;
+				FindBestPlayer(density, bestPlayer, maxValue, totalDensity);
+
+				float coverage = CoverageFromTotalDensity(totalDensity);
+				float dominance = maxValue / max(totalDensity, 1e-5);
+				float alpha = saturate(_BaseAlpha + dominance * _DominanceAlphaBoost);
+				alpha = min(alpha, _MaxAlpha);
+				alpha *= coverage;
+
+				float2 px = _DistributionMap_TexelSize.xy * _BorderWidth;
+				float neighborBorder = 0;
+				float coverageBorder = 0;
+
+				float2 offsets[4] =
+				{
+					float2(px.x, 0),
+					float2(-px.x, 0),
+					float2(0, px.y),
+					float2(0, -px.y)
+				};
+
+				for(int i = 0; i < 4; ++i)
+				{
+					float4 nd = SampleSmoothedDensity(input.uv + offsets[i]);
+					int nBest;
+					float nMax;
+					float nTotal;
+					FindBestPlayer(nd, nBest, nMax, nTotal);
+					float nCoverage = CoverageFromTotalDensity(nTotal);
+
+					if(coverage > 0.001 && nCoverage > 0.001 && nBest != bestPlayer)
+						neighborBorder = 1;
+
+					coverageBorder = max(coverageBorder, abs(coverage - nCoverage));
+				}
+
+				float borderFromCoverage = smoothstep(_BorderSoftness * 0.25, _BorderSoftness, coverageBorder);
+				float borderMix = saturate(max(neighborBorder, borderFromCoverage) * _BorderStrength);
+
+				float4 playerColor = GetPlayerColor(bestPlayer);
+				float3 rgb = lerp(playerColor.rgb, _BorderColor.rgb, borderMix);
+				float outAlpha = saturate(max(alpha, borderMix * _BorderColor.a * coverage));
+				return float4(rgb, outAlpha);
 			}
 			ENDCG
 		}
