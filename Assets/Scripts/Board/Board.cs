@@ -7,8 +7,8 @@ public class Board : MonoBehaviour
 	public static Board Current {  get; private set; }
 
 	#region Constants
-	const int RenderTextureSize = 1024;
 	const string DisplayShaderResourcePath = "Shaders/BoardDisplay";
+	const string BoardTerritoryMaterialResourcePath = "Materials/Board Territory";
 	const string GridMaterialResourcePath = "Materials/BoardGrid";
 	const string StoneModelResourcePath = "Models/Stone";
 	const string StoneMaterialResourcePath = "Materials/Stone";
@@ -44,13 +44,11 @@ public class Board : MonoBehaviour
 	bool hasPreview;
 	BoardUtility.BoardCaches caches;
 	Material material;
-	Material displayMaterial;
 	Material gridMaterial;
 	Material stoneMaterialTemplate;
 	Material[] stoneSharedMaterials;
 	Material stoneTransparentMaterialTemplate;
 	Material[] stoneSharedTransparentMaterials;
-	RenderTexture mainTexture;
 	Shader displayShader;
 	GameObject gridGo;
 	GameObject stoneRoot;
@@ -69,17 +67,17 @@ public class Board : MonoBehaviour
 		BoardUtility.Initialize(caches = new BoardUtility.BoardCaches());
 
 		displayShader = Resources.Load<Shader>(DisplayShaderResourcePath);
-		mainTexture = CreateRenderTexture(CreateMainTextureDescriptor());
-
-		material = new(renderer.sharedMaterial);
+		Material displayMaterialTemplate = Resources.Load<Material>(BoardTerritoryMaterialResourcePath);
+		if(displayMaterialTemplate != null)
+			material = new Material(displayMaterialTemplate);
+		else if(displayShader != null)
+			material = new Material(displayShader);
+		else
+			material = new(renderer.sharedMaterial);
 		renderer.material = material;
-		material.mainTexture = mainTexture;
 
 		InitializeGridOverlay();
 		InitializeStoneVisuals();
-
-		if(displayShader != null)
-			displayMaterial = new Material(displayShader);
 	}
 
 	protected void OnDestroy()
@@ -88,12 +86,6 @@ public class Board : MonoBehaviour
 		{
 			Destroy(material);
 			material = null;
-		}
-
-		if(displayMaterial != null)
-		{
-			Destroy(displayMaterial);
-			displayMaterial = null;
 		}
 
 		if(gridMaterial != null)
@@ -117,8 +109,6 @@ public class Board : MonoBehaviour
 			Destroy(stoneRoot);
 			stoneRoot = null;
 		}
-
-		ReleaseRenderTexture(ref mainTexture);
 
 		if(caches != null)
 		{
@@ -155,25 +145,27 @@ public class Board : MonoBehaviour
 
 	public void RefreshRendering(BoardState renderState)
 	{
-		if(mainTexture == null || renderState == null || caches == null || !caches.isInitialized)
+		if(renderState == null || caches == null || !caches.isInitialized)
 			return;
 
 		Color[] colors = PlayerColors ?? new Color[] { Color.black, Color.white };
 		BoardUtility.RenderAnalysis(caches, renderState, colors);
-		if(displayMaterial != null)
+		if(material == null)
+			return;
+
+		if(material.HasProperty("_DistributionMap"))
 		{
-			displayMaterial.SetTexture("_DistributionMap", caches.distributionMap);
-			displayMaterial.SetFloat("_Threshold", renderState.Threshold);
+			material.SetTexture("_DistributionMap", caches.distributionMap);
+			material.SetFloat("_Threshold", renderState.Threshold);
 			int playerCount = colors.Length;
 			for(int player = 0; player < BoardUtility.MaxPlayers; ++player)
 			{
 				Color playerColor = player < playerCount ? colors[player] : Color.magenta;
-				displayMaterial.SetColor($"_PlayerColor{player}", playerColor);
+				material.SetColor($"_PlayerColor{player}", playerColor);
 			}
-			Graphics.Blit(caches.distributionMap, mainTexture, displayMaterial);
 		}
-		else
-			Graphics.Blit(caches.distributionMap, mainTexture);
+		else if(material.HasProperty("_MainTex"))
+			material.mainTexture = caches.distributionMap;
 	}
 	#endregion
 
@@ -578,39 +570,4 @@ public class Board : MonoBehaviour
 	}
 	#endregion
 
-	#region Rendering texture helpers
-	RenderTextureDescriptor CreateMainTextureDescriptor()
-	{
-		return new RenderTextureDescriptor(RenderTextureSize, RenderTextureSize, RenderTextureFormat.ARGB32, 0)
-		{
-			enableRandomWrite = false,
-			sRGB = QualitySettings.activeColorSpace == ColorSpace.Linear,
-			msaaSamples = 1,
-			useMipMap = false,
-			autoGenerateMips = false,
-		};
-	}
-
-	RenderTexture CreateRenderTexture(RenderTextureDescriptor descriptor)
-	{
-		RenderTexture rt = new(descriptor)
-		{
-			wrapMode = TextureWrapMode.Clamp,
-			filterMode = FilterMode.Bilinear,
-		};
-		rt.Create();
-		return rt;
-	}
-
-	void ReleaseRenderTexture(ref RenderTexture rt)
-	{
-		if(rt == null)
-			return;
-
-		if(rt.IsCreated())
-			rt.Release();
-		Destroy(rt);
-		rt = null;
-	}
-	#endregion
 }
