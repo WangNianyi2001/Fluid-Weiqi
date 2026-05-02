@@ -12,7 +12,7 @@ GameObject:
   - component: {fileID: 2213036120783690576}
   - component: {fileID: 8092744887033784697}
   - component: {fileID: 6151439498809834817}
-  - component: {fileID: 7944348463184152649}
+  - component: {fileID: 8835194012312248637}
   m_Layer: 0
   m_Name: Standard
   m_TagString: Untagged
@@ -107,7 +107,7 @@ MeshCollider:
   m_Convex: 1
   m_CookingOptions: 30
   m_Mesh: {fileID: 10210, guid: 0000000000000000e000000000000000, type: 0}
---- !u!114 &7944348463184152649
+--- !u!114 &8835194012312248637
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -116,14 +116,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 8491598463589660107}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e2a1b812d4f8f8d46a11bee620a65752, type: 3}
+  m_Script: {fileID: 11500000, guid: f3ffad64a82575448b34f85df4dfede1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   renderer: {fileID: 8092744887033784697}
-  playerColors:
-  - {r: 0, g: 0, b: 0, a: 1}
-  - {r: 1, g: 1, b: 1, a: 1}
-  playerCount: 2
-  size: 19
-  stoneVariance: 0.25
-  threshold: 0.5

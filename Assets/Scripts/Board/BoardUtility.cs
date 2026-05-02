@@ -222,6 +222,54 @@ public static class BoardUtility
 		return labelsByPlayer;
 	}
 
+	/// <summary>
+	/// Standard Go placement rule: occupancy check, suicide check, capture.
+	/// Caches must be current for <paramref name="state"/> before calling.
+	/// On success, caches are left reflecting <paramref name="newState"/>.
+	/// </summary>
+	public static bool TryPlaceStoneStandard(
+		BoardCaches c,
+		BoardState state,
+		int player,
+		Vector2 position,
+		out BoardState newState,
+		float strength = 1)
+	{
+		newState = null;
+		if(player < 0 || player >= state.PlayerCount) return false;
+		if(strength <= 0) return false;
+		if(position.x < 0 || position.x >= state.Size || position.y < 0 || position.y >= state.Size) return false;
+		if(IsOccupiedAtLogicalPosition(c, state, position)) return false;
+
+		BoardState previewState = new(state);
+		previewState.AddStone(player, position, strength);
+
+		RunGameplayAnalysis(c, previewState);
+
+		List<ChainStat> chainStats = GetChainStats(c);
+		Dictionary<int, ChainStat> chainStatsByRoot = new(chainStats.Count);
+		HashSet<int> capturedRoots = new();
+
+		for(int i = 0; i < chainStats.Count; ++i)
+		{
+			ChainStat cs = chainStats[i];
+			chainStatsByRoot[cs.rootLabel] = cs;
+			if(cs.owner != player && cs.hasLiberty == 0)
+				capturedRoots.Add(cs.rootLabel);
+		}
+
+		int placedRoot = GetChainLabelAtLogicalPosition(c, previewState, position);
+		bool hasLiberty = chainStatsByRoot.TryGetValue(placedRoot, out ChainStat placedStat) && placedStat.hasLiberty != 0;
+		if(capturedRoots.Count == 0 && !hasLiberty)
+			return false;
+
+		if(capturedRoots.Count > 0)
+			RemoveCapturedStonesStandard(c, previewState, capturedRoots, player);
+
+		newState = previewState;
+		return true;
+	}
+
 	#endregion
 
 	#region Board parameters
@@ -238,6 +286,32 @@ public static class BoardUtility
 	#endregion
 
 	#region Private computation
+
+	static void RunGameplayAnalysis(BoardCaches c, BoardState state)
+	{
+		RenderDistributionMap(c, state);
+		RenderTerritoryMap(c, state, System.Array.Empty<Color>());
+		RunDominantAreaStats(c, state);
+		RunConnectedComponents(c);
+		RunChainStats(c);
+	}
+
+	static void RemoveCapturedStonesStandard(BoardCaches c, BoardState state, HashSet<int> capturedRoots, int currentPlayer)
+	{
+		List<List<int>> stoneChainLabels = GetStoneChainLabels(c, state);
+		for(int player = 0; player < state.PlayerCount; ++player)
+		{
+			if(player == currentPlayer)
+				continue;
+
+			List<int> playerLabels = stoneChainLabels[player];
+			for(int stoneIndex = playerLabels.Count - 1; stoneIndex >= 0; --stoneIndex)
+			{
+				if(capturedRoots.Contains(playerLabels[stoneIndex]))
+					state.RemoveStoneAt(player, stoneIndex);
+			}
+		}
+	}
 
 	static void RenderDistributionMap(BoardCaches c, BoardState state)
 	{

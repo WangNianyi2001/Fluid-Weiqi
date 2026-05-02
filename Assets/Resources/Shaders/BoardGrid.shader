@@ -22,10 +22,10 @@ Shader "FluidWeiqi/BoardGrid"
 
 		Pass
 		{
-			CGPROGRAM
+			HLSLPROGRAM
 			#pragma vertex vert
 			#pragma fragment frag
-			#include "UnityCG.cginc"
+			#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
 			struct appdata
 			{
@@ -51,7 +51,7 @@ Shader "FluidWeiqi/BoardGrid"
 			v2f vert(appdata vertexInput)
 			{
 				v2f output;
-				output.vertex = UnityObjectToClipPos(vertexInput.vertex);
+				output.vertex = TransformObjectToHClip(vertexInput.vertex.xyz);
 				output.uv = vertexInput.uv;
 				return output;
 			}
@@ -116,7 +116,7 @@ Shader "FluidWeiqi/BoardGrid"
 				return alpha;
 			}
 
-			fixed4 frag(v2f input) : SV_Target
+			float4 frag(v2f input) : SV_Target
 			{
 				float boardSize = max(2.0, floor(_BoardSize + 0.5));
 				float lineX = GetAxisLineAlpha(input.uv.x, boardSize, _LineThickness, _EdgeLineMultiplier);
@@ -128,7 +128,7 @@ Shader "FluidWeiqi/BoardGrid"
 				clip(alpha - _AlphaCutout);
 				return float4(_GridColor.rgb, alpha);
 			}
-			ENDCG
+			ENDHLSL
 		}
 	}
 }

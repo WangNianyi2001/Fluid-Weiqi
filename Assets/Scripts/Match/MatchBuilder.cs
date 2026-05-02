@@ -1,5 +1,6 @@
 using UnityEngine;
-using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 
 public class MatchBuilder : MonoBehaviour
 {
@@ -16,14 +17,17 @@ public class MatchBuilder : MonoBehaviour
 	#region Build
 	void BuildMatch()
 	{
+		board = MakeStandardBoard();
+		InitializeBoard(board);
+		match = MakeMatchController(Lobby.Current.MatchRule.mode);
+		InitializeMatch(match, board);
+
 		switch(Lobby.Current.MatchRule.mode)
 		{
 			case MatchMode.Traditional:
-				MakeStandardBoard();
 				break;
 
 			case MatchMode.Training:
-				MakeStandardBoard();
 				break;
 
 			default:
@@ -38,6 +42,47 @@ public class MatchBuilder : MonoBehaviour
 			standardBoardPrefab = Resources.Load<GameObject>("Prefabs/Boards/Standard");
 		var go = Instantiate(standardBoardPrefab, boardAnchor);
 		return go.GetComponent<Board>();
+	}
+
+	Match MakeMatchController(MatchMode mode)
+	{
+		GameObject host = uiRoot != null ? uiRoot.gameObject : gameObject;
+		return mode switch
+		{
+			MatchMode.Traditional => host.AddComponent<TraditionalMatch>(),
+			MatchMode.Training => host.AddComponent<TrainingMatch>(),
+			_ => throw new System.NotSupportedException($"Cannot create match controller for {mode}, not supported."),
+		};
+	}
+
+	void InitializeBoard(Board targetBoard)
+	{
+		if(targetBoard == null)
+			throw new MissingReferenceException("Failed to create board for match build.");
+
+		MatchRule rule = Lobby.Current.MatchRule;
+		List<PlayerInfo> playerInfos = BuildPlayerInfos();
+		targetBoard.SetState(new BoardState(playerInfos.Count, rule.boardSize));
+		targetBoard.PlayerColors = playerInfos.Select(info => info.color).ToArray();
+	}
+
+	void InitializeMatch(Match targetMatch, Board targetBoard)
+	{
+		if(targetMatch == null)
+			throw new MissingReferenceException("Failed to create match controller for match build.");
+
+		targetMatch.PlayerInfos = BuildPlayerInfos();
+	}
+
+	List<PlayerInfo> BuildPlayerInfos()
+	{
+		return Lobby.Current.Players
+			.Select(player => new PlayerInfo
+			{
+				name = player.GetLocalizedName(),
+				color = player.color,
+			})
+			.ToList();
 	}
 	#endregion
 

@@ -112,21 +112,18 @@ public abstract class Match : MonoBehaviour
 		if(board == null)
 			return;
 
-		LastPlacementSucceed = board.State.TryPlaceStone(
-			currentPlayerIndex,
-			position,
-			GetChainStats,
-			GetChainLabelAtLogicalPosition,
-			GetStoneChainLabels,
-			out BoardState nextState
-		);
+		BoardState currentState = board.State;
+		AnalyzeState(currentState);
+
+		LastPlacementSucceed = BoardUtility.TryPlaceStoneStandard(
+			board.Caches, currentState, currentPlayerIndex, position, out BoardState nextState);
 		if(!LastPlacementSucceed)
 			return;
 
 		if(AudioManager.Instance != null)
 			AudioManager.Instance.PlayPlaceStoneSound();
 
-		int capturedStoneCount = CountCapturedStones(board.State, nextState, currentPlayerIndex);
+		int capturedStoneCount = CountCapturedStones(currentState, nextState, currentPlayerIndex);
 		if(capturedStoneCount > 0 && AudioManager.Instance != null)
 			AudioManager.Instance.PlayCaptureSound();
 
@@ -145,47 +142,32 @@ public abstract class Match : MonoBehaviour
 		if(board == null)
 			return false;
 
-		if(board.State.HasStoneOverlap(position))
+		BoardState state = board.State;
+
+		if(IsOccupiedAtLogicalPosition(board, state, position))
 		{
 			board.ClearPreview();
 			return false;
 		}
 
-		if(!board.State.PeekStonePlacement(currentPlayerIndex, position, out BoardState previewState))
+		if(position.x < 0 || position.x >= state.Size || position.y < 0 || position.y >= state.Size)
 		{
 			board.ClearPreview();
 			return false;
 		}
 
+		BoardState previewState = new(state);
+		previewState.AddStone(currentPlayerIndex, position);
 		board.ShowPreview(previewState);
 		return true;
 	}
 
-	List<BoardUtility.ChainStat> GetChainStats(BoardState renderState)
+	bool IsOccupiedAtLogicalPosition(Board board, BoardState renderState, Vector2 position)
 	{
 		AnalyzeState(renderState);
-		Board board = Board.Current;
 		if(board == null || board.Caches == null)
-			return new List<BoardUtility.ChainStat>();
-		return BoardUtility.GetChainStats(board.Caches);
-	}
-
-	int GetChainLabelAtLogicalPosition(BoardState renderState, Vector2 position)
-	{
-		AnalyzeState(renderState);
-		Board board = Board.Current;
-		if(board == null || board.Caches == null)
-			return -1;
-		return BoardUtility.GetChainLabelAtLogicalPosition(board.Caches, renderState, position);
-	}
-
-	List<List<int>> GetStoneChainLabels(BoardState renderState)
-	{
-		AnalyzeState(renderState);
-		Board board = Board.Current;
-		if(board == null || board.Caches == null)
-			return new List<List<int>>();
-		return BoardUtility.GetStoneChainLabels(board.Caches, renderState);
+			return false;
+		return BoardUtility.IsOccupiedAtLogicalPosition(board.Caches, renderState, position);
 	}
 
 	void AnalyzeState(BoardState renderState)

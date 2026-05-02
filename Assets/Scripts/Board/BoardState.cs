@@ -14,9 +14,6 @@ public struct StonePlacement
 
 public class BoardState
 {
-	const float StoneCollisionDiameter = 1f - 1e-4f;
-	const float StoneCollisionDiameterSquared = StoneCollisionDiameter * StoneCollisionDiameter;
-
 	public BoardState(int playerCount = 2, int size = 19)
 	{
 		PlayerCount = playerCount;
@@ -83,117 +80,39 @@ public class BoardState
 		return stones[player];
 	}
 
-	public bool HasStoneOverlap(Vector2 position, int ignoredStoneId = -1)
+	public bool TryFindNearestStone(Vector2 logicalPosition, float maxDistance, out int player, out int stoneIndex)
 	{
-		for(int player = 0; player < PlayerCount; ++player)
+		player = -1;
+		stoneIndex = -1;
+		float bestSqr = maxDistance * maxDistance;
+
+		for(int p = 0; p < PlayerCount; ++p)
 		{
-			IReadOnlyList<StonePlacement> playerStones = stones[player];
-			for(int stoneIndex = 0; stoneIndex < playerStones.Count; ++stoneIndex)
+			IReadOnlyList<StonePlacement> playerStones = stones[p];
+			for(int i = 0; i < playerStones.Count; ++i)
 			{
-				StonePlacement stone = playerStones[stoneIndex];
-				if(stone.id == ignoredStoneId)
-					continue;
-
-				if((stone.position - position).sqrMagnitude < StoneCollisionDiameterSquared)
-					return true;
-			}
-		}
-
-		return false;
-	}
-
-	public bool TryRemoveStoneAtLogicalPosition(Vector2 position, out BoardState newState)
-	{
-		newState = null;
-
-		if(position.x < 0 || position.x >= Size || position.y < 0 || position.y >= Size)
-			return false;
-
-		for(int player = 0; player < PlayerCount; ++player)
-		{
-			IReadOnlyList<StonePlacement> playerStones = stones[player];
-			for(int stoneIndex = 0; stoneIndex < playerStones.Count; ++stoneIndex)
-			{
-				StonePlacement stone = playerStones[stoneIndex];
-				if(stone.position == position)
+				float sqr = (playerStones[i].position - logicalPosition).sqrMagnitude;
+				if(sqr < bestSqr)
 				{
-					newState = new(this);
-					newState.RemoveStoneAt(player, stoneIndex);
-					return true;
+					bestSqr = sqr;
+					player = p;
+					stoneIndex = i;
 				}
 			}
 		}
 
-		return false;
+		return player >= 0;
 	}
 
-	public bool PeekStonePlacement(int player, Vector2 position, out BoardState newState, float strength = 1)
-	{
-		if(player < 0 || player >= PlayerCount)
-		{
-			newState = null;
-			return false;
-		}
-
-		if(strength <= 0)
-		{
-			newState = null;
-			return false;
-		}
-
-		if(position.x < 0 || position.x >= Size || position.y < 0 || position.y >= Size)
-		{
-			newState = null;
-			return false;
-		}
-
-		newState = new(this);
-		newState.AddStone(player, position, strength);
-		return true;
-	}
-
-	public bool TryPlaceStone(
-		int player,
-		Vector2 position,
-		Func<BoardState, List<BoardUtility.ChainStat>> getChainStats,
-		Func<BoardState, Vector2, int> getChainLabelAtLogicalPosition,
-		Func<BoardState, List<List<int>>> getStoneChainLabels,
-		out BoardState newState,
-		float strength = 1)
+	public bool TryRemoveStoneAtLogicalPosition(Vector2 position, out BoardState newState, float searchRadius = 0.5f)
 	{
 		newState = null;
-		if(getChainStats == null || getChainLabelAtLogicalPosition == null || getStoneChainLabels == null)
-			throw new ArgumentNullException("BoardState.TryPlaceStone analysis callbacks must not be null.");
 
-		if(!PeekStonePlacement(player, position, out BoardState placedPreviewState, strength))
+		if(!TryFindNearestStone(position, searchRadius, out int player, out int stoneIndex))
 			return false;
 
-		StonePlacement placedStone = placedPreviewState.stones[player][placedPreviewState.stones[player].Count - 1];
-		List<BoardUtility.ChainStat> chainStats = getChainStats(placedPreviewState);
-		Dictionary<int, BoardUtility.ChainStat> chainStatsByRoot = new(chainStats.Count);
-		HashSet<int> capturedRoots = new();
-
-		for(int i = 0; i < chainStats.Count; ++i)
-		{
-			BoardUtility.ChainStat chainStat = chainStats[i];
-			chainStatsByRoot[chainStat.rootLabel] = chainStat;
-			if(chainStat.owner != player && chainStat.hasLiberty == 0)
-				capturedRoots.Add(chainStat.rootLabel);
-		}
-
-		int placedChainRoot = getChainLabelAtLogicalPosition(placedPreviewState, position);
-		bool placedChainHasLiberty = chainStatsByRoot.TryGetValue(placedChainRoot, out BoardUtility.ChainStat placedChainStat)
-			&& placedChainStat.hasLiberty != 0;
-		if(capturedRoots.Count == 0 && !placedChainHasLiberty)
-			return false;
-
-		if(capturedRoots.Count > 0)
-			RemoveCapturedStones(placedPreviewState, capturedRoots, player, getStoneChainLabels);
-
-		if(placedPreviewState.HasStoneOverlap(placedStone.position, placedStone.id))
-			return false;
-
-		newState = placedPreviewState;
+		newState = new(this);
+		newState.RemoveStoneAt(player, stoneIndex);
 		return true;
 	}
 
@@ -205,26 +124,5 @@ public class BoardState
 			position = position,
 			strength = strength,
 		};
-	}
-
-	static void RemoveCapturedStones(
-		BoardState renderState,
-		HashSet<int> capturedRoots,
-		int currentPlayerIndex,
-		Func<BoardState, List<List<int>>> getStoneChainLabels)
-	{
-		List<List<int>> stoneChainLabels = getStoneChainLabels(renderState);
-		for(int player = 0; player < renderState.PlayerCount; ++player)
-		{
-			if(player == currentPlayerIndex)
-				continue;
-
-			List<int> playerLabels = stoneChainLabels[player];
-			for(int stoneIndex = playerLabels.Count - 1; stoneIndex >= 0; --stoneIndex)
-			{
-				if(capturedRoots.Contains(playerLabels[stoneIndex]))
-					renderState.RemoveStoneAt(player, stoneIndex);
-			}
-		}
 	}
 }
