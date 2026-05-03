@@ -153,7 +153,7 @@ public class GameManager : MonoBehaviour
 
 	#region Lobby
 	public Lobby Lobby { get; private set; } = null;
-	public ILobbyBrowser LobbyBrowser { get; private set; } = new StubLobbyBrowser();
+	public ILobbyService LobbyService { get; private set; } = new StubLobbyService();
 	public IMatchTransport MatchTransport { get; private set; } = new InMemoryMatchTransport();
 	public ILobbySyncTransport LobbySyncTransport { get; private set; } = new InMemoryLobbySyncTransport();
 

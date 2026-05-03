@@ -17,6 +17,10 @@ public class BrowseLobbyUi : MonoBehaviour
 	[SerializeField] Transform rowContainer;
 	[SerializeField] int pageSize = DefaultPageSize;
 
+	[Header("Join by invite code")]
+	[SerializeField] InputField inviteCodeInput;
+	[SerializeField] Button joinByCodeButton;
+
 	[Header("Navigation")]
 	[SerializeField] Button backButton;
 
@@ -27,7 +31,7 @@ public class BrowseLobbyUi : MonoBehaviour
 	static GameObject rowPrefab;
 	static GameObject RowPrefab => rowPrefab ??= Resources.Load<GameObject>("UI/Browse Lobby/Lobby Row");
 
-	ILobbyBrowser Browser => GameManager.Instance?.LobbyBrowser;
+	ILobbyService Service => GameManager.Instance?.LobbyService;
 
 	#region Unity life cycle
 	protected void Start()
@@ -35,12 +39,7 @@ public class BrowseLobbyUi : MonoBehaviour
 		if(pageSize <= 0)
 			pageSize = DefaultPageSize;
 
-		refreshButton.onClick.AddListener(OnRefreshClicked);
-		prevPageButton.onClick.AddListener(OnPrevPageClicked);
-		nextPageButton.onClick.AddListener(OnNextPageClicked);
 		searchInput.onEndEdit.AddListener(OnSearchEndEdit);
-		if(backButton != null)
-			backButton.onClick.AddListener(OnBackButtonClicked);
 
 		Refresh();
 	}
@@ -51,6 +50,8 @@ public class BrowseLobbyUi : MonoBehaviour
 		prevPageButton.onClick.RemoveListener(OnPrevPageClicked);
 		nextPageButton.onClick.RemoveListener(OnNextPageClicked);
 		searchInput.onEndEdit.RemoveListener(OnSearchEndEdit);
+		if(joinByCodeButton != null)
+			joinByCodeButton.onClick.RemoveListener(OnJoinByCodeClicked);
 		if(backButton != null)
 			backButton.onClick.RemoveListener(OnBackButtonClicked);
 	}
@@ -97,13 +98,13 @@ public class BrowseLobbyUi : MonoBehaviour
 		isLoading = true;
 		SetInteractable(false);
 
-		if(Browser == null)
+		if(Service == null)
 		{
 			OnQueryResult(new List<LobbySnapshot>());
 			return;
 		}
 
-		Browser.QueryLobbies(currentOffset, pageSize, currentFilter, OnQueryResult);
+		Service.QueryLobbies(currentOffset, pageSize, currentFilter, OnQueryResult);
 	}
 
 	void OnQueryResult(IReadOnlyList<LobbySnapshot> results)
@@ -146,13 +147,33 @@ public class BrowseLobbyUi : MonoBehaviour
 
 		isLoading = true;
 		SetInteractable(false);
-		if(Browser == null)
+		if(Service == null)
 		{
 			OnJoinResult(new JoinLobbyResult { success = false });
 			return;
 		}
 
-		Browser.JoinLobby(lobbyId, OnJoinResult);
+		Service.JoinLobby(lobbyId, OnJoinResult);
+	}
+
+	public void OnJoinByCodeClicked()
+	{
+		if(isLoading)
+			return;
+
+		string code = inviteCodeInput != null ? inviteCodeInput.text?.Trim() : null;
+		if(string.IsNullOrEmpty(code))
+			return;
+
+		isLoading = true;
+		SetInteractable(false);
+		if(Service == null)
+		{
+			OnJoinResult(new JoinLobbyResult { success = false });
+			return;
+		}
+
+		Service.JoinLobbyByCode(code, OnJoinResult);
 	}
 
 	void OnJoinResult(JoinLobbyResult result)
@@ -178,6 +199,10 @@ public class BrowseLobbyUi : MonoBehaviour
 		searchInput.interactable = value;
 		prevPageButton.interactable = value;
 		nextPageButton.interactable = value;
+		if(inviteCodeInput != null)
+			inviteCodeInput.interactable = value;
+		if(joinByCodeButton != null)
+			joinByCodeButton.interactable = value;
 		if(backButton != null)
 			backButton.interactable = value;
 	}

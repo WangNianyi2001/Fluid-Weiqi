@@ -95,9 +95,30 @@ public class HostLobby : Lobby
 	public void SetVisibility(LobbyVisibility value)
 	{
 		visibility = value;
+		if(visibility != LobbyVisibility.Private)
+			invitationCode = null;
 		OnVisibilityChanged?.Invoke();
+
+		if(visibility == LobbyVisibility.Private && string.IsNullOrEmpty(invitationCode))
+		{
+			var service = GameManager.Instance?.LobbyService;
+			if(service != null)
+			{
+				service.RequestInvitationCode(locator, code =>
+				{
+					invitationCode = code;
+					PublishLobbySnapshot();
+				});
+				return; // broadcast deferred until code arrives
+			}
+		}
+
 		PublishLobbySnapshot();
 	}
+
+	string invitationCode;
+	public override string GetInvitationCode() =>
+		Visibility == LobbyVisibility.Private ? invitationCode : null;
 	#endregion
 
 	#region Players

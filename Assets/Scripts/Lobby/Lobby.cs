@@ -124,12 +124,7 @@ public abstract class Lobby
 	public abstract LobbyVisibility Visibility { get; }
 	public Action OnVisibilityChanged;
 
-	public string GetInvitationCode()
-	{
-		if(Visibility != LobbyVisibility.Private)
-			return null;
-		return "KFVTHURVME50";  // TODO
-	}
+	public virtual string GetInvitationCode() => null;
 	#endregion
 
 	#region Players

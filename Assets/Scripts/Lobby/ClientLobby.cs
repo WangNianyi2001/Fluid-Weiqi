@@ -10,6 +10,7 @@ public class ClientLobby : Lobby
 
 	LobbyVisibility visibility;
 	MatchRule matchRule;
+	string invitationCode;
 
 	public override LobbyLocator Locator => locator;
 	public override LobbyVisibility Visibility => visibility;
@@ -33,10 +34,13 @@ public class ClientLobby : Lobby
 		if(Locator.IsValid && snapshot.lobbyLocator.IsValid && Locator.id != snapshot.lobbyLocator.id)
 			return;
 
-		ApplySnapshot(snapshot.visibility, snapshot.matchRule, NetworkSnapshotUtility.ToPlayerDescriptors(snapshot.players));
+		ApplySnapshot(snapshot.visibility, snapshot.matchRule, NetworkSnapshotUtility.ToPlayerDescriptors(snapshot.players), snapshot.invitationCode);
 	}
 
-	public void ApplySnapshot(LobbyVisibility newVisibility, MatchRule newMatchRule, IReadOnlyList<PlayerDescriptor> snapshotPlayers)
+	public override string GetInvitationCode() =>
+		Visibility == LobbyVisibility.Private ? invitationCode : null;
+
+	public void ApplySnapshot(LobbyVisibility newVisibility, MatchRule newMatchRule, IReadOnlyList<PlayerDescriptor> snapshotPlayers, string newInvitationCode = null)
 	{
 		bool changedVisibility = visibility != newVisibility;
 		visibility = newVisibility;
@@ -46,6 +50,7 @@ public class ClientLobby : Lobby
 		matchRule = newMatchRule;
 		OnMatchRuleChanged?.Invoke();
 
+		invitationCode = newInvitationCode;
 		ReplacePlayers(snapshotPlayers);
 	}
 

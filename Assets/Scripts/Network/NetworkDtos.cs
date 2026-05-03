@@ -76,6 +76,7 @@ public sealed class LobbySyncSnapshot
 	public int version;
 	public LobbyVisibility visibility;
 	public MatchRule matchRule;
+	public string invitationCode;
 	public List<LobbyPlayerSnapshot> players = new();
 }
 
@@ -141,6 +142,7 @@ public static class NetworkSnapshotUtility
 			version = version,
 			visibility = lobby.Visibility,
 			matchRule = lobby.MatchRule,
+			invitationCode = lobby.GetInvitationCode(),
 		};
 
 		for(int i = 0; i < lobby.Players.Count; ++i)
