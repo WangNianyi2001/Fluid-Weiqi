@@ -77,8 +77,15 @@ public class LocalPlayer : MatchPlayer
 		if(!receivingMove)
 			return;
 
+		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Place, position))
+		{
+			receivingMove = false;
+			input.enabled = false;
+			return;
+		}
+
 		bool succeed = Match.ReceivePlace(position);
-		if(succeed && !Match.IsEnded)
+		if(succeed)
 			NotifyMadeMove();
 	}
 
@@ -86,6 +93,12 @@ public class LocalPlayer : MatchPlayer
 	{
 		if(!receivingMove)
 			return;
+		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Remove, position))
+		{
+			receivingMove = false;
+			input.enabled = false;
+			return;
+		}
 		Match.ReceiveRemove(position);
 	}
 
@@ -94,8 +107,14 @@ public class LocalPlayer : MatchPlayer
 		if(!receivingMove)
 			return;
 
+		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Pass, Vector2.zero))
+		{
+			receivingMove = false;
+			input.enabled = false;
+			return;
+		}
+
 		Match.ReceivePass();
-		if(!Match.IsEnded)
-			NotifyMadeMove();
+		NotifyMadeMove();
 	}
 }

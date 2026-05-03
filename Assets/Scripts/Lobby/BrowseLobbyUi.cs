@@ -148,18 +148,26 @@ public class BrowseLobbyUi : MonoBehaviour
 		SetInteractable(false);
 		if(Browser == null)
 		{
-			OnJoinResult(false);
+			OnJoinResult(new JoinLobbyResult { success = false });
 			return;
 		}
 
 		Browser.JoinLobby(lobbyId, OnJoinResult);
 	}
 
-	void OnJoinResult(bool success)
+	void OnJoinResult(JoinLobbyResult result)
 	{
 		isLoading = false;
-		if(success)
+		if(result != null && result.success)
+		{
+			GameManager.Instance?.LoadClientLobby(
+				result.lobbyLocator,
+				result.localPlayerLocator,
+				result.visibility,
+				result.matchRule,
+				result.players);
 			GameManager.Instance?.SwitchScene(GameScene.Lobby);
+		}
 		else
 			SetInteractable(true);
 	}

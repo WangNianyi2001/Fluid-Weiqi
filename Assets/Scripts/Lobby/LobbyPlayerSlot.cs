@@ -31,11 +31,13 @@ public class LobbyPlayerSlot : MonoBehaviour
 
 	[SerializeField] Graphic colorGraphic;
 	[SerializeField] Dropdown typeDropdown;
+	[SerializeField] Dropdown colorDropdown;
 	[SerializeField] Text nameText;
 	[SerializeField] Dropdown aiDropdown;
 	[SerializeField] Button removeButton;
 
 	readonly List<AiConfig> aiOptions = new();
+	readonly List<PlayerColorOption> colorOptions = new();
 
 	protected void Start()
 	{
@@ -50,6 +52,7 @@ public class LobbyPlayerSlot : MonoBehaviour
 		typeDropdown.options = typeOptions.Select(t => new Dropdown.OptionData(t.ToLocalizedString())).ToList();
 		typeDropdown.value = typeOptions.IndexOf(Descriptor.type);
 
+		RefreshColorDropdown();
 		colorGraphic.color = Descriptor.color;
 
 		bool isAi = Descriptor.type == PlayerType.Ai;
@@ -68,12 +71,14 @@ public class LobbyPlayerSlot : MonoBehaviour
 		if(!Lobby.Current.IsHost)
 		{
 			typeDropdown.interactable = false;
+			colorDropdown.interactable = false;
 			aiDropdown.interactable = false;
 			removeButton.gameObject.SetActive(false);
 		}
 		else
 		{
 			typeDropdown.onValueChanged.AddListener(OnTypeDropdownValueChanged);
+			colorDropdown.onValueChanged.AddListener(OnColorDropdownValueChanged);
 			aiDropdown.onValueChanged.AddListener(OnAiDropdownValueChanged);
 			Lobby.Current.OnMatchRuleChanged += OnMatchRuleChangedRefreshAi;
 		}
@@ -99,10 +104,34 @@ public class LobbyPlayerSlot : MonoBehaviour
 		aiDropdown.SetValueWithoutNotify(selected);
 	}
 
+	void RefreshColorDropdown()
+	{
+		colorOptions.Clear();
+		if(GameSettings.Instance != null)
+		{
+			foreach(PlayerColorOption option in GameSettings.Instance.AvailablePlayerColors)
+				colorOptions.Add(option);
+		}
+
+		colorDropdown.options = colorOptions.Select(c => new Dropdown.OptionData(c.name)).ToList();
+		int selected = Mathf.Clamp(Descriptor?.colorIndex ?? 0, 0, Mathf.Max(0, colorOptions.Count - 1));
+		colorDropdown.SetValueWithoutNotify(selected);
+	}
+
 	void OnMatchRuleChangedRefreshAi()
 	{
 		if(Descriptor?.type == PlayerType.Ai)
 			RefreshAiDropdown();
+	}
+
+	void OnColorDropdownValueChanged(int i)
+	{
+		if(!colorOptions.IsValidIndex(i) || Descriptor == null)
+			return;
+		
+		Descriptor.colorIndex = i;
+		colorGraphic.color = Descriptor.color;
+		HostLobby.Current?.SetPlayerColor(Index, i);
 	}
 
 	void OnAiDropdownValueChanged(int i)

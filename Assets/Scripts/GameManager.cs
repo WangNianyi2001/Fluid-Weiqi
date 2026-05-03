@@ -154,15 +154,49 @@ public class GameManager : MonoBehaviour
 	#region Lobby
 	public Lobby Lobby { get; private set; } = null;
 	public ILobbyBrowser LobbyBrowser { get; private set; } = new StubLobbyBrowser();
+	public IMatchTransport MatchTransport { get; private set; } = new InMemoryMatchTransport();
+	public ILobbySyncTransport LobbySyncTransport { get; private set; } = new InMemoryLobbySyncTransport();
+
+	void ConfigureHostTransports(HostLobby hostLobby)
+	{
+		if(hostLobby == null)
+			return;
+
+		MatchTransport?.ConfigureAsHost(hostLobby.Locator, hostLobby.LocalPlayerLocator);
+		LobbySyncTransport?.ConfigureAsHost(hostLobby.Locator, hostLobby.LocalPlayerLocator);
+		if(LobbySyncTransport != null)
+		{
+			LobbySyncTransport.OnClientDisconnected -= hostLobby.NotifyClientDisconnected;
+			LobbySyncTransport.OnClientDisconnected += hostLobby.NotifyClientDisconnected;
+		}
+	}
+
+	void ConfigureClientTransports(ClientLobby clientLobby)
+	{
+		if(clientLobby == null)
+			return;
+
+		MatchTransport?.ConfigureAsClient(clientLobby.Locator, clientLobby.LocalPlayerLocator);
+		LobbySyncTransport?.ConfigureAsClient(clientLobby.Locator, clientLobby.LocalPlayerLocator);
+		if(LobbySyncTransport != null)
+		{
+			LobbySyncTransport.OnSnapshotReceived -= clientLobby.ApplySnapshot;
+			LobbySyncTransport.OnSnapshotReceived += clientLobby.ApplySnapshot;
+		}
+	}
 
 	public void LoadDefaultLobby()
 	{
-		Lobby = new HostLobby(DefaultMatchModeId);
+		HostLobby hostLobby = new HostLobby(DefaultMatchModeId, new LobbyLocator(System.Guid.NewGuid().ToString("N")));
+		Lobby = hostLobby;
+		ConfigureHostTransports(hostLobby);
 	}
 
 	public void LoadClientLobby(LobbyLocator lobbyLocator, PlayerLocator localPlayerLocator, LobbyVisibility visibility, MatchRule matchRule, IReadOnlyList<PlayerDescriptor> snapshotPlayers)
 	{
-		Lobby = new ClientLobby(lobbyLocator, localPlayerLocator, visibility, matchRule, snapshotPlayers);
+		ClientLobby clientLobby = new ClientLobby(lobbyLocator, localPlayerLocator, visibility, matchRule, snapshotPlayers);
+		Lobby = clientLobby;
+		ConfigureClientTransports(clientLobby);
 	}
 
 	public void CreateLobby()
@@ -178,6 +212,14 @@ public class GameManager : MonoBehaviour
 
 	public void ExitLobby()
 	{
+		if(Lobby != null && !Lobby.IsHost)
+			LobbySyncTransport?.NotifyClientDisconnected(Lobby.LocalPlayerLocator);
+
+		if(LobbySyncTransport != null && Lobby is ClientLobby clientLobby)
+			LobbySyncTransport.OnSnapshotReceived -= clientLobby.ApplySnapshot;
+		if(LobbySyncTransport != null && Lobby is HostLobby hostLobby)
+			LobbySyncTransport.OnClientDisconnected -= hostLobby.NotifyClientDisconnected;
+
 		SwitchScene(GameScene.StartMenu);
 		Lobby = null;
 	}

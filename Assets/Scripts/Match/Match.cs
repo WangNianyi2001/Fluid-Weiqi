@@ -26,6 +26,11 @@ public abstract class Match : MonoBehaviour
 	readonly List<MatchPlayer> players = new();
 	bool isEnded;
 	public bool IsEnded => isEnded;
+	bool[] playerPassStates;
+	int turnSeq;
+	int nextActionSeq = 1;
+	int pendingAuthorityActionSeq;
+	IMatchTransport matchTransport;
 
 	#region Unity life cycle
 	protected void Awake()
@@ -38,10 +43,17 @@ public abstract class Match : MonoBehaviour
 		InitializePlayers();
 		CurrentPlayerIndex = 0;
 		BeginCurrentPlayerTurn();
+		InitializeNetworkTransport();
 	}
 
 	protected void OnDestroy()
 	{
+		if(matchTransport != null)
+		{
+			matchTransport.OnActionRequestReceived -= OnNetworkActionRequest;
+			matchTransport.OnActionResultReceived -= OnNetworkActionResult;
+			matchTransport.OnConnectionStateChanged -= OnNetworkConnectionStateChanged;
+		}
 		players.Clear();
 	}
 	#endregion
@@ -248,6 +260,10 @@ public abstract class Match : MonoBehaviour
 
 	protected void SetPlayerPassState(int playerIndex, bool passed)
 	{
+		if(playerPassStates == null || playerPassStates.Length != PlayerCount)
+			playerPassStates = new bool[PlayerCount];
+		if(playerIndex >= 0 && playerIndex < playerPassStates.Length)
+			playerPassStates[playerIndex] = passed;
 		onPlayerPassStateChanged?.Invoke(playerIndex, passed);
 	}
 
@@ -259,6 +275,7 @@ public abstract class Match : MonoBehaviour
 	void InitializePlayers()
 	{
 		players.Clear();
+		playerPassStates = new bool[PlayerCount];
 
 		for(int i = 0; i < PlayerCount; ++i)
 		{
@@ -279,10 +296,10 @@ public abstract class Match : MonoBehaviour
 		return fallback;
 	}
 
-	OnlinePlayer CreateOnlinePlayer(int playerIndex, OnlinePlayerRole role)
+	OnlinePlayer CreateOnlinePlayer(int playerIndex, OnlinePlayerRole role, PlayerLocator locator)
 	{
 		OnlinePlayer online = gameObject.AddComponent<OnlinePlayer>();
-		online.Initialize(this, playerIndex, role);
+		online.Initialize(this, playerIndex, role, locator);
 		return online;
 	}
 
@@ -299,7 +316,7 @@ public abstract class Match : MonoBehaviour
 		{
 			case PlayerType.Local:
 				if(!ownedByLocal)
-					return CreateOnlinePlayer(playerIndex, OnlinePlayerRole.RemoteToLocal);
+					return CreateOnlinePlayer(playerIndex, OnlinePlayerRole.RemoteToLocal, descriptor.locator);
 
 				LocalPlayer local = gameObject.AddComponent<LocalPlayer>();
 				local.Initialize(this, playerIndex);
@@ -308,7 +325,7 @@ public abstract class Match : MonoBehaviour
 				if(!ownedByLocal)
 				{
 					Debug.LogWarning($"AI slot {playerIndex} is not owned by this client, fallback to OnlinePlayer proxy.");
-					return CreateOnlinePlayer(playerIndex, OnlinePlayerRole.RemoteToLocal);
+					return CreateOnlinePlayer(playerIndex, OnlinePlayerRole.RemoteToLocal, descriptor.locator);
 				}
 
 				if(GameManager.Instance == null)
@@ -338,7 +355,7 @@ public abstract class Match : MonoBehaviour
 
 				return aiConfig.CreatePlayer(this, playerIndex, Rule);
 			case PlayerType.Online:
-				return CreateOnlinePlayer(playerIndex, ownedByLocal ? OnlinePlayerRole.LocalToRemote : OnlinePlayerRole.RemoteToLocal);
+				return CreateOnlinePlayer(playerIndex, ownedByLocal ? OnlinePlayerRole.LocalToRemote : OnlinePlayerRole.RemoteToLocal, descriptor.locator);
 			default:
 				return CreateLocalPlayerFallback(playerIndex);
 		}
@@ -346,13 +363,20 @@ public abstract class Match : MonoBehaviour
 
 	void OnPlayerMadeMove(int playerIndex)
 	{
-		if(isEnded)
-			return;
 		if(playerIndex != CurrentPlayerIndex)
 			return;
 
-		StepPlayerIndex();
-		BeginCurrentPlayerTurn();
+		turnSeq += 1;
+		if(!isEnded)
+			StepPlayerIndex();
+
+		if(ShouldBroadcastAuthorityResult())
+			BroadcastAuthorityResult(true, null, playerIndex, pendingAuthorityActionSeq);
+
+		pendingAuthorityActionSeq = 0;
+
+		if(!isEnded)
+			BeginCurrentPlayerTurn();
 	}
 
 	void BeginCurrentPlayerTurn()
@@ -367,6 +391,180 @@ public abstract class Match : MonoBehaviour
 		BoardState state = Board.Current?.State;
 		BoardState snapshot = state != null ? new BoardState(state) : null;
 		players[safeIndex].RequestMove(snapshot);
+	}
+
+	bool ShouldBroadcastAuthorityResult()
+	{
+		return Lobby.Current != null && Lobby.Current.IsOnline && Lobby.Current.IsHost && matchTransport != null;
+	}
+
+	void BroadcastAuthorityResult(bool accepted, string reason, int playerIndex, int actionSeq)
+	{
+		if(!ShouldBroadcastAuthorityResult())
+			return;
+
+		MatchActionResult result = new MatchActionResult
+		{
+			accepted = accepted,
+			reason = reason,
+			playerIndex = playerIndex,
+			actionSeq = actionSeq,
+			boardSnapshot = NetworkSnapshotUtility.BuildBoardSnapshot(Board.Current?.State),
+			flowSnapshot = new MatchFlowSnapshot
+			{
+				currentPlayerIndex = CurrentPlayerIndex,
+				turnSeq = turnSeq,
+				isEnded = isEnded,
+				passStates = playerPassStates != null ? (bool[])playerPassStates.Clone() : null,
+			},
+		};
+		matchTransport.BroadcastActionResult(result);
+	}
+
+	void InitializeNetworkTransport()
+	{
+		if(Lobby.Current == null || !Lobby.Current.IsOnline)
+			return;
+		if(GameManager.Instance == null)
+			return;
+
+		matchTransport = GameManager.Instance.MatchTransport;
+		if(matchTransport == null)
+			return;
+
+		matchTransport.OnConnectionStateChanged -= OnNetworkConnectionStateChanged;
+		matchTransport.OnConnectionStateChanged += OnNetworkConnectionStateChanged;
+
+		if(Lobby.Current.IsHost)
+		{
+			matchTransport.OnActionRequestReceived -= OnNetworkActionRequest;
+			matchTransport.OnActionRequestReceived += OnNetworkActionRequest;
+		}
+		else
+		{
+			matchTransport.OnActionResultReceived -= OnNetworkActionResult;
+			matchTransport.OnActionResultReceived += OnNetworkActionResult;
+		}
+	}
+
+	void OnNetworkConnectionStateChanged(NetworkConnectionState state)
+	{
+		for(int i = 0; i < players.Count; ++i)
+		{
+			if(players[i] is OnlinePlayer onlinePlayer)
+				onlinePlayer.SetConnectionState(state == NetworkConnectionState.Connected || state == NetworkConnectionState.Degraded);
+		}
+	}
+
+	void OnNetworkActionRequest(MatchActionRequest request)
+	{
+		if(request == null || Lobby.Current == null || !Lobby.Current.IsHost)
+			return;
+
+		int playerIndex = Lobby.Current.Players.FindIndex(p => p != null && p.locator == request.playerLocator);
+		if(playerIndex < 0)
+		{
+			BroadcastAuthorityResult(false, "unknown-player", -1, request.actionSeq);
+			return;
+		}
+
+		if(playerIndex != CurrentPlayerIndex)
+		{
+			BroadcastAuthorityResult(false, "not-current-player", playerIndex, request.actionSeq);
+			return;
+		}
+
+		if(request.turnSeq != turnSeq)
+		{
+			BroadcastAuthorityResult(false, "turn-seq-mismatch", playerIndex, request.actionSeq);
+			return;
+		}
+
+		if(!(players[playerIndex] is OnlinePlayer onlinePlayer))
+		{
+			BroadcastAuthorityResult(false, "player-is-not-online-proxy", playerIndex, request.actionSeq);
+			return;
+		}
+
+		pendingAuthorityActionSeq = request.actionSeq;
+		bool handled = onlinePlayer.TryHandleRemoteRequest(request);
+		if(!handled)
+		{
+			pendingAuthorityActionSeq = 0;
+			BroadcastAuthorityResult(false, "invalid-action", playerIndex, request.actionSeq);
+			return;
+		}
+
+		if(request.actionType == MatchActionType.Remove)
+		{
+			BroadcastAuthorityResult(true, null, playerIndex, request.actionSeq);
+			pendingAuthorityActionSeq = 0;
+		}
+	}
+
+	void OnNetworkActionResult(MatchActionResult result)
+	{
+		if(result == null)
+			return;
+
+		if(result.accepted)
+		{
+			BoardState syncedState = NetworkSnapshotUtility.ToBoardState(result.boardSnapshot);
+			if(Board.Current != null && syncedState != null)
+			{
+				Board.Current.SetState(syncedState);
+				onStateChanged?.Invoke();
+			}
+
+			if(result.flowSnapshot != null)
+			{
+				turnSeq = result.flowSnapshot.turnSeq;
+				CurrentPlayerIndex = result.flowSnapshot.currentPlayerIndex;
+				bool[] passStates = result.flowSnapshot.passStates;
+				if(passStates != null)
+				{
+					for(int i = 0; i < PlayerCount; ++i)
+						SetPlayerPassState(i, i < passStates.Length && passStates[i]);
+				}
+
+				if(result.flowSnapshot.isEnded && !isEnded)
+				{
+					isEnded = true;
+					CancelAllPlayers();
+					onEnd?.Invoke();
+				}
+				else if(!result.flowSnapshot.isEnded && !isEnded)
+				{
+					BeginCurrentPlayerTurn();
+				}
+			}
+		}
+		else
+		{
+			BeginCurrentPlayerTurn();
+		}
+	}
+
+	public bool TrySendPlayerActionRequest(int playerIndex, MatchActionType actionType, Vector2 position)
+	{
+		if(Lobby.Current == null || !Lobby.Current.IsOnline || Lobby.Current.IsHost)
+			return false;
+		if(GameManager.Instance == null || GameManager.Instance.MatchTransport == null)
+			return false;
+		if(playerIndex < 0 || playerIndex >= Lobby.Current.Players.Count)
+			return false;
+
+		MatchActionRequest request = new MatchActionRequest
+		{
+			playerLocator = Lobby.Current.Players[playerIndex].locator,
+			playerIndex = playerIndex,
+			actionType = actionType,
+			position = position,
+			turnSeq = turnSeq,
+			actionSeq = nextActionSeq++,
+		};
+		GameManager.Instance.MatchTransport.SendActionRequest(request);
+		return true;
 	}
 
 	void CancelAllPlayers()

@@ -65,10 +65,10 @@ static class GameSettingsProjectSettingsProvider
 				cachedSerializedSettings = new SerializedObject(cachedSettings);
 
 			cachedSerializedSettings.Update();
-			EditorGUILayout.PropertyField(cachedSerializedSettings.FindProperty("defaultMatchModeId"));
-			EditorGUILayout.PropertyField(cachedSerializedSettings.FindProperty("defaultMatchSkinPrefab"));
-			EditorGUILayout.PropertyField(cachedSerializedSettings.FindProperty("legacyMatchModes"), true);
-			EditorGUILayout.PropertyField(cachedSerializedSettings.FindProperty("legacyAis"), true);
+			SerializedProperty prop = cachedSerializedSettings.GetIterator();
+			prop.NextVisible(true); // skip "m_Script"
+			while(prop.NextVisible(false))
+				EditorGUILayout.PropertyField(prop, true);
 
 			if(cachedSerializedSettings.ApplyModifiedProperties())
 				EditorUtility.SetDirty(cachedSettings);

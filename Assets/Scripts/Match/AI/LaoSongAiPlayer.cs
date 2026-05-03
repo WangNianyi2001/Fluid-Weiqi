@@ -71,7 +71,6 @@ public class LaoSongAiPlayer : AiPlayer
 			return;
 
 		Match.ReceivePass();
-		if(!Match.IsEnded)
-			NotifyMadeMove();
+		NotifyMadeMove();
 	}
 }

@@ -7,6 +7,8 @@ public class HostLobby : Lobby
 {
 	public new static HostLobby Current => Lobby.Current as HostLobby;
 	public static readonly PlayerLocator HostPlayerLocator = new("host");
+	readonly LobbyLocator locator;
+	int lobbyVersion = 0;
 
 	#region Creation
 	static PlayerLocator MakeRemotePlayerLocator(int i)
@@ -21,8 +23,7 @@ public class HostLobby : Lobby
 			type = PlayerType.Local,
 			isHost = true,
 			locator = HostPlayerLocator,
-
-			color = Color.black,
+			colorIndex = 0,
 		};
 		yield return new()
 		{
@@ -30,8 +31,7 @@ public class HostLobby : Lobby
 			isHost = false,
 			locator = HostPlayerLocator,
 			aiId = LaoSongAiConfig.Id,
-
-			color = Color.white,
+			colorIndex = 1,
 		};
 	}
 
@@ -42,13 +42,13 @@ public class HostLobby : Lobby
 			type = PlayerType.Local,
 			isHost = false,
 			locator = HostPlayerLocator,
-
-			color = new Color[] { Color.red, Color.green, Color.blue, Color.yellow }[i],
+			colorIndex = (i + 2) % 4,
 		};
 	}
 
-	public HostLobby(string defaultMatchModeId)
+	public HostLobby(string defaultMatchModeId, LobbyLocator locator)
 	{
+		this.locator = locator;
 		players.AddRange(MakeDefaultPlayerList());
 		matchRule = new MatchRule
 		{
@@ -76,15 +76,27 @@ public class HostLobby : Lobby
 	{
 		OnMatchEnded?.Invoke();
 	}
+
+	public void NotifyClientDisconnected(PlayerLocator locator)
+	{
+		if(!locator.IsValid)
+			return;
+
+		Debug.LogWarning($"Client '{locator}' disconnected from host lobby.");
+		PublishLobbySnapshot();
+	}
 	#endregion
 
 	#region Lobby settings
+	public override LobbyLocator Locator => locator;
+
 	LobbyVisibility visibility = LobbyVisibility.Local;
 	public override LobbyVisibility Visibility => visibility;
 	public void SetVisibility(LobbyVisibility value)
 	{
 		visibility = value;
 		OnVisibilityChanged?.Invoke();
+		PublishLobbySnapshot();
 	}
 	#endregion
 
@@ -126,6 +138,7 @@ public class HostLobby : Lobby
 
 		players[i] = player;
 		OnPlayersChanged?.Invoke();
+		PublishLobbySnapshot();
 	}
 
 	public void SetPlayerAi(int i, string aiId)
@@ -141,6 +154,21 @@ public class HostLobby : Lobby
 		player.aiId = aiId;
 		players[i] = player;
 		OnPlayersChanged?.Invoke();
+		PublishLobbySnapshot();
+	}
+
+	public void SetPlayerColor(int i, int colorIndex)
+	{
+		if(!players.IsValidIndex(i))
+		{
+			Debug.LogWarning($"Failed to set player #{i}'s color to index {colorIndex}.");
+			return;
+		}
+		PlayerDescriptor player = players[i];
+		player.colorIndex = colorIndex;
+		players[i] = player;
+		OnPlayersChanged?.Invoke();
+		PublishLobbySnapshot();
 	}
 
 	public void RemovePlayer(int i)
@@ -157,6 +185,7 @@ public class HostLobby : Lobby
 		}
 		players.RemoveAt(i);
 		OnPlayersChanged?.Invoke();
+		PublishLobbySnapshot();
 	}
 
 	public void AddPlayer()
@@ -168,6 +197,7 @@ public class HostLobby : Lobby
 		}
 		players.Add(MakeNewPlayer(players.Count));
 		OnPlayersChanged?.Invoke();
+		PublishLobbySnapshot();
 	}
 	#endregion
 
@@ -178,6 +208,19 @@ public class HostLobby : Lobby
 	{
 		matchRule = value;
 		OnMatchRuleChanged?.Invoke();
+		PublishLobbySnapshot();
 	}
 	#endregion
+
+	void PublishLobbySnapshot()
+	{
+		if(GameManager.Instance == null)
+			return;
+		if(!IsOnline)
+			return;
+
+		lobbyVersion += 1;
+		LobbySyncSnapshot snapshot = NetworkSnapshotUtility.BuildLobbySnapshot(this, lobbyVersion);
+		GameManager.Instance.LobbySyncTransport?.BroadcastSnapshot(snapshot);
+	}
 }

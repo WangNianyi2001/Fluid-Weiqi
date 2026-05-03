@@ -10,8 +10,11 @@ public class StubLobbyBrowser : ILobbyBrowser
 		onResult?.Invoke(empty);
 	}
 
-	public void JoinLobby(string lobbyId, Action<bool> onResult)
+	public void JoinLobby(string lobbyId, Action<JoinLobbyResult> onResult)
 	{
-		onResult?.Invoke(false);
+		onResult?.Invoke(new JoinLobbyResult
+		{
+			success = false,
+		});
 	}
 }

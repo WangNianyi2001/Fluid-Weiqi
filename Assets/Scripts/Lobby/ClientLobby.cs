@@ -11,6 +11,7 @@ public class ClientLobby : Lobby
 	LobbyVisibility visibility;
 	MatchRule matchRule;
 
+	public override LobbyLocator Locator => locator;
 	public override LobbyVisibility Visibility => visibility;
 	public override List<PlayerDescriptor> Players => players;
 	public override MatchRule MatchRule => matchRule;
@@ -25,7 +26,15 @@ public class ClientLobby : Lobby
 		ReplacePlayers(initialPlayers);
 	}
 
-	public LobbyLocator Locator => locator;
+	public void ApplySnapshot(LobbySyncSnapshot snapshot)
+	{
+		if(snapshot == null)
+			return;
+		if(Locator.IsValid && snapshot.lobbyLocator.IsValid && Locator.id != snapshot.lobbyLocator.id)
+			return;
+
+		ApplySnapshot(snapshot.visibility, snapshot.matchRule, NetworkSnapshotUtility.ToPlayerDescriptors(snapshot.players));
+	}
 
 	public void ApplySnapshot(LobbyVisibility newVisibility, MatchRule newMatchRule, IReadOnlyList<PlayerDescriptor> snapshotPlayers)
 	{

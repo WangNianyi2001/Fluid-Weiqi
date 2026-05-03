@@ -68,10 +68,11 @@ public class PlayerDescriptor
 	public bool isHost;
 	public PlayerLocator locator;
 	public string aiId;
+	public int colorIndex;
 
 	public int Index => Lobby.Current?.Players.IndexOf(this) ?? -1;
 
-	public Color color;
+	public Color color => GameSettings.Instance?.GetPlayerColor(colorIndex) ?? Color.white;
 	public string GetLocalizedName()
 	{
 		return type switch
@@ -119,6 +120,7 @@ public abstract class Lobby
 	#endregion
 
 	#region Lobby settings
+	public abstract LobbyLocator Locator { get; }
 	public abstract LobbyVisibility Visibility { get; }
 	public Action OnVisibilityChanged;
 

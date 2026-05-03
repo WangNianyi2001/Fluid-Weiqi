@@ -74,8 +74,7 @@ public class LobbyUi : MonoBehaviour
 
 	void LeaveLobby()
 	{
-		// TODO: Notify host
-		ReturnToStartMenu();
+		GameManager.Instance.ExitLobby();
 	}
 
 	void OnLobbyDismissed()
