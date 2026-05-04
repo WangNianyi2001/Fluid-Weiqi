@@ -8,6 +8,7 @@ public enum LobbyVisibility
 	Local, Private, Public
 }
 
+[System.Serializable]
 public struct LobbyLocator
 {
 	public string id;
@@ -25,6 +26,7 @@ public enum PlayerType
 	Local, Ai, Online
 }
 
+[System.Serializable]
 public struct PlayerLocator
 {
 	public string id;

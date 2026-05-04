@@ -6,6 +6,11 @@ public class StubLobbyService : ILobbyService
 {
 	static readonly IReadOnlyList<LobbySnapshot> empty = new List<LobbySnapshot>();
 
+	public void CreateLobby(LobbyVisibility visibility, int maxMembers, Action<LobbyLocator> onCreated)
+	{
+		onCreated?.Invoke(new LobbyLocator(System.Guid.NewGuid().ToString("N")));
+	}
+
 	public void QueryLobbies(int offset, int count, string nameFilter, Action<IReadOnlyList<LobbySnapshot>> onResult)
 	{
 		onResult?.Invoke(empty);

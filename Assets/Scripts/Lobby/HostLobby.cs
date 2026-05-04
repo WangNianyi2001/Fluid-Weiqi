@@ -106,6 +106,7 @@ public class HostLobby : Lobby
 				service.RequestInvitationCode(locator, code =>
 				{
 					invitationCode = code;
+					OnVisibilityChanged?.Invoke();
 					PublishLobbySnapshot();
 				});
 				return; // broadcast deferred until code arrives

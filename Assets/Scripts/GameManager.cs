@@ -43,6 +43,25 @@ public class GameManager : MonoBehaviour
 		// Create audio manager
 		if(AudioManager.Instance == null)
 			gameObject.AddComponent<AudioManager>();
+
+		// Create Steam manager
+		if(SteamManager.Instance == null)
+			gameObject.AddComponent<SteamManager>();
+
+		// Initialize network services after Steam is ready
+		InitializeNetworkServices();
+	}
+
+	protected void Start()
+	{
+		// DEBUG
+		if(!SteamManager.Initialized)
+			Debug.LogWarning("Steam SDK not initialized.");
+		else
+		{
+			string name = Steamworks.SteamFriends.GetPersonaName();
+			Debug.Log($"Steam persona name: {name}");
+		}
 	}
 
 	protected void OnDestroy()
@@ -153,9 +172,32 @@ public class GameManager : MonoBehaviour
 
 	#region Lobby
 	public Lobby Lobby { get; private set; } = null;
-	public ILobbyService LobbyService { get; private set; } = new StubLobbyService();
-	public IMatchTransport MatchTransport { get; private set; } = new InMemoryMatchTransport();
-	public ILobbySyncTransport LobbySyncTransport { get; private set; } = new InMemoryLobbySyncTransport();
+
+#if !DISABLESTEAMWORKS
+	static bool SteamAvailable => SteamManager.Initialized;
+#else
+	static bool SteamAvailable => false;
+#endif
+
+	public ILobbyService LobbyService { get; private set; }
+	public IMatchTransport MatchTransport { get; private set; }
+	public ILobbySyncTransport LobbySyncTransport { get; private set; }
+
+	void InitializeNetworkServices()
+	{
+#if !DISABLESTEAMWORKS
+		if(SteamAvailable)
+		{
+			LobbyService      = new SteamLobbyService();
+			MatchTransport    = new SteamMatchTransport();
+			LobbySyncTransport = new SteamLobbySyncTransport();
+			return;
+		}
+#endif
+		LobbyService       = new StubLobbyService();
+		MatchTransport     = new InMemoryMatchTransport();
+		LobbySyncTransport = new InMemoryLobbySyncTransport();
+	}
 
 	void ConfigureHostTransports(HostLobby hostLobby)
 	{
@@ -187,9 +229,12 @@ public class GameManager : MonoBehaviour
 
 	public void LoadDefaultLobby()
 	{
-		HostLobby hostLobby = new HostLobby(DefaultMatchModeId, new LobbyLocator(System.Guid.NewGuid().ToString("N")));
-		Lobby = hostLobby;
-		ConfigureHostTransports(hostLobby);
+		LobbyService.CreateLobby(LobbyVisibility.Local, 4, locator =>
+		{
+			HostLobby hostLobby = new HostLobby(DefaultMatchModeId, locator);
+			Lobby = hostLobby;
+			ConfigureHostTransports(hostLobby);
+		});
 	}
 
 	public void LoadClientLobby(LobbyLocator lobbyLocator, PlayerLocator localPlayerLocator, LobbyVisibility visibility, MatchRule matchRule, IReadOnlyList<PlayerDescriptor> snapshotPlayers)

@@ -16,6 +16,7 @@ public enum MatchActionType
 	Remove,
 }
 
+[System.Serializable]
 public sealed class MatchActionRequest
 {
 	public PlayerLocator playerLocator;
@@ -26,6 +27,7 @@ public sealed class MatchActionRequest
 	public int actionSeq;
 }
 
+[System.Serializable]
 public struct StonePlacementSnapshot
 {
 	public int playerIndex;
@@ -34,6 +36,7 @@ public struct StonePlacementSnapshot
 	public float strength;
 }
 
+[System.Serializable]
 public sealed class BoardStateSnapshot
 {
 	public int playerCount;
@@ -43,6 +46,7 @@ public sealed class BoardStateSnapshot
 	public List<StonePlacementSnapshot> stones = new();
 }
 
+[System.Serializable]
 public sealed class MatchFlowSnapshot
 {
 	public int currentPlayerIndex;
@@ -51,6 +55,7 @@ public sealed class MatchFlowSnapshot
 	public bool[] passStates;
 }
 
+[System.Serializable]
 public sealed class MatchActionResult
 {
 	public bool accepted;
@@ -61,6 +66,7 @@ public sealed class MatchActionResult
 	public MatchFlowSnapshot flowSnapshot;
 }
 
+[System.Serializable]
 public sealed class LobbyPlayerSnapshot
 {
 	public PlayerType type;
@@ -70,6 +76,7 @@ public sealed class LobbyPlayerSnapshot
 	public int colorIndex;
 }
 
+[System.Serializable]
 public sealed class LobbySyncSnapshot
 {
 	public LobbyLocator lobbyLocator;

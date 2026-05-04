@@ -13,6 +13,9 @@ public sealed class JoinLobbyResult
 
 public interface ILobbyService
 {
+	// Creates a lobby (may be async on Steam). Returns the locator via callback.
+	void CreateLobby(LobbyVisibility visibility, int maxMembers, Action<LobbyLocator> onCreated);
+
 	void QueryLobbies(int offset, int count, string nameFilter, Action<IReadOnlyList<LobbySnapshot>> onResult);
 	void JoinLobby(string lobbyId, Action<JoinLobbyResult> onResult);
 	void JoinLobbyByCode(string invitationCode, Action<JoinLobbyResult> onResult);
