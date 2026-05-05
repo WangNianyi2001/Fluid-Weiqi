@@ -24,8 +24,7 @@ public class BoardState
 	{
 		PlayerCount = original.PlayerCount;
 		Size = original.Size;
-		StoneVariance = original.StoneVariance;
-		Threshold = original.Threshold;
+		StoneHardness = original.StoneHardness;
 		nextStoneId = original.nextStoneId;
 		stones = original.stones.Select(ps => new List<StonePlacement>(ps)).ToList();
 	}
@@ -52,8 +51,7 @@ public class BoardState
 
 	public float Size { get; private set; } = 19;
 	public float BoardStateExtent => Size - 1;
-	public float StoneVariance { get; set; } = 1f / Mathf.Sqrt(16);
-	public float Threshold { get; set; } = .5f;
+	public float StoneHardness { get; set; } = 0.5f;
 
 	public void AddStone(int player, Vector2 position, float strength = 1)
 	{

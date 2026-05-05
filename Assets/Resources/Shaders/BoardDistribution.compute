@@ -39,8 +39,7 @@ int _Player2StoneCount;
 int _Player3StoneCount;
 
 float _BoardSize;
-float _StoneVariance;
-float _Threshold;
+float _StoneHardness;
 float _AreaEpsilon;
 int _PlayerCount;
 int _TextureWidth;
@@ -51,36 +50,27 @@ float4 _PlayerColor1;
 float4 _PlayerColor2;
 float4 _PlayerColor3;
 
-float GaussianContribution(float2 boardPosition, float2 center, float strength, float inverseDoubleVariance)
+float PowerContribution(float2 boardPosition, float2 center, float strength)
 {
+	// Preparation
 	float2 delta = boardPosition - center;
-	float distanceSquared = dot(delta, delta);
-	return strength * exp(-distanceSquared * inverseDoubleVariance);
+	float r = max(length(delta), 0.001);
+	float rNorm = 2.0 * r / sqrt(strength);
+	// Form
+	float alpha = 1.0 / (1.0 - min(_StoneHardness, 0.99));
+	float res = exp((1.0 - rNorm) * alpha);
+	res = clamp(res, 0, 4);
+	return res;
 }
 
 float AccumulateDensity(float2 boardPosition, StructuredBuffer<StonePlacement> stones, int stoneCount)
 {
 	float density = 0.0;
-	float inverseDoubleVariance = 0.5 / _StoneVariance;
 
 	for(int index = 0; index < stoneCount; ++index)
 	{
 		StonePlacement stone = stones[index];
-		float2 center = stone.position;
-		density += GaussianContribution(boardPosition, center, stone.strength, inverseDoubleVariance);
-
-		float rightX = 2.0 * _BoardSize - center.x;
-		float topY = 2.0 * _BoardSize - center.y;
-
-		density += GaussianContribution(boardPosition, float2(-center.x, center.y), stone.strength, inverseDoubleVariance);
-		density += GaussianContribution(boardPosition, float2(rightX, center.y), stone.strength, inverseDoubleVariance);
-		density += GaussianContribution(boardPosition, float2(center.x, -center.y), stone.strength, inverseDoubleVariance);
-		density += GaussianContribution(boardPosition, float2(center.x, topY), stone.strength, inverseDoubleVariance);
-
-		density += GaussianContribution(boardPosition, float2(-center.x, -center.y), stone.strength, inverseDoubleVariance);
-		density += GaussianContribution(boardPosition, float2(-center.x, topY), stone.strength, inverseDoubleVariance);
-		density += GaussianContribution(boardPosition, float2(rightX, -center.y), stone.strength, inverseDoubleVariance);
-		density += GaussianContribution(boardPosition, float2(rightX, topY), stone.strength, inverseDoubleVariance);
+		density += PowerContribution(boardPosition, stone.position, stone.strength);
 	}
 
 	return density;
@@ -162,7 +152,7 @@ void CSTerritory(uint3 id : SV_DispatchThreadID)
 		owner = 3;
 	}
 
-	bool occupied = totalDensity >= _Threshold && owner < _PlayerCount;
+	bool occupied = totalDensity >= 1.0 && owner < _PlayerCount;
 	if(!occupied)
 	{
 		_OwnerBuffer[index] = -1;

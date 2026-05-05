@@ -24,11 +24,6 @@ public abstract class MatchModeConfig : ScriptableObject
 			errorMessage = "棋盘尺寸必须大于等于 2。";
 			return false;
 		}
-		if(rule.stoneHardness <= 0)
-		{
-			errorMessage = "棋子硬度必须大于 0。";
-			return false;
-		}
 		return true;
 	}
 
@@ -57,6 +52,7 @@ public abstract class MatchModeConfig : ScriptableObject
 			throw new MissingReferenceException($"Standard board prefab does not contain a Board component.");
 
 		board.SetState(new BoardState(context.PlayerInfos.Count, context.Rule.boardSize));
+		board.State.StoneHardness = context.Rule.stoneHardness;
 		board.PlayerColors = context.PlayerInfos.Select(info => info.color).ToArray();
 
 		GameObject host = context.UiRoot != null ? context.UiRoot.gameObject : boardGo;

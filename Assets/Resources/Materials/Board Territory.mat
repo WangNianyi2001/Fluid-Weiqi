@@ -29,7 +29,7 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _AlphaCurve: 0.1
+    - _AlphaCurve: 0.01
     - _BaseAlpha: 0.3
     - _BlurStrength: 0.58
     - _BorderSoftness: 0.22
@@ -37,6 +37,7 @@ Material:
     - _BorderWidth: 0.5
     - _DominanceAlphaBoost: 0.6
     - _MaxAlpha: 0.76
+    - _MinAlpha: 0.25
     - _Threshold: 0.5
     - _ThresholdSoftness: 0.03
     m_Colors:

@@ -74,7 +74,7 @@ public class HostLobby : Lobby
 		{
 			modeId = defaultMatchModeId,
 			boardSize = 19,
-			stoneHardness = 1f,
+			stoneHardness = 0.0f,
 		};
 	}
 	#endregion

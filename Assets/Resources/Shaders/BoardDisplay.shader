@@ -4,6 +4,7 @@ Shader "FluidWeiqi/BoardDisplay"
 	{
 		[Header(Inspector)]
 		[Space]
+		_MinAlpha ("Min Alpha", Range(0, 1)) = 0.5
 		_AlphaCurve ("Alpha Curve", Range(0, 1)) = 1
 		_PlayerColor0 ("Player Color 0", Color) = (0, 0, 0, 1)
 		_PlayerColor1 ("Player Color 1", Color) = (1, 1, 1, 1)
@@ -13,7 +14,6 @@ Shader "FluidWeiqi/BoardDisplay"
 		[Header(Runtime)]
 		[Space]
 		_DistributionMap ("Distribution Map", 2D) = "black" {}
-		_Threshold ("Threshold", Float) = 0.5
 	}
 
 	SubShader
@@ -46,7 +46,7 @@ Shader "FluidWeiqi/BoardDisplay"
 			TEXTURE2D(_DistributionMap);
 			SAMPLER(sampler_DistributionMap);
 			float4 _DistributionMap_TexelSize;
-			float _Threshold;
+			float _MinAlpha;
 			float _AlphaCurve;
 			float4 _PlayerColor0;
 			float4 _PlayerColor1;
@@ -89,9 +89,13 @@ Shader "FluidWeiqi/BoardDisplay"
 
 			float AlphaFromDensity(float totalDensity)
 			{
-				float a = totalDensity < _Threshold ? 0 : totalDensity;
-				float exponent = max(_AlphaCurve, 1e-4);
-				return pow(a, exponent);
+				float t = totalDensity - 1;
+				if(t < 0)
+					return 0;
+				t = step(0, t) * t;
+				t = exp(t);
+				t = (t - 1) / (t + 1);
+				return lerp(_MinAlpha, 1, pow(t, _AlphaCurve));
 			}
 
 			float4 frag(v2f input) : SV_Target

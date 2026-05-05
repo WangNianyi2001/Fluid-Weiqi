@@ -240,7 +240,7 @@ public class LobbyUi : MonoBehaviour
 		var rule = Lobby.Current.MatchRule;
 		boardSizeText.text = rule.boardSize.ToString();
 		boardSizeSlider.value = rule.boardSize;
-		stoneHardnessText.text = rule.stoneHardness.ToString("F1");
+		stoneHardnessText.text = rule.stoneHardness.ToString("F2");
 		stoneHardnessSlider.value = rule.stoneHardness;
 	}
 	#endregion

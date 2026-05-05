@@ -126,7 +126,6 @@ public abstract class Board : MonoBehaviour
 		if(material.HasProperty("_DistributionMap"))
 		{
 			material.SetTexture("_DistributionMap", caches.distributionMap);
-			material.SetFloat("_Threshold", renderState.Threshold);
 			int playerCount = colors.Length;
 			for(int player = 0; player < BoardUtility.MaxPlayers; ++player)
 			{

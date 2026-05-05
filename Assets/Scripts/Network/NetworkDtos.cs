@@ -41,8 +41,7 @@ public sealed class BoardStateSnapshot
 {
 	public int playerCount;
 	public int size;
-	public float stoneVariance;
-	public float threshold;
+	public float stoneHardness;
 	public List<StonePlacementSnapshot> stones = new();
 }
 
@@ -99,8 +98,7 @@ public static class NetworkSnapshotUtility
 		{
 			playerCount = state.PlayerCount,
 			size = Mathf.RoundToInt(state.Size),
-			stoneVariance = state.StoneVariance,
-			threshold = state.Threshold,
+			stoneHardness = state.StoneHardness,
 		};
 
 		for(int player = 0; player < state.PlayerCount; ++player)
@@ -129,8 +127,7 @@ public static class NetworkSnapshotUtility
 
 		BoardState state = new BoardState(snapshot.playerCount, Mathf.Max(1, snapshot.size))
 		{
-			StoneVariance = snapshot.stoneVariance,
-			Threshold = snapshot.threshold,
+			StoneHardness = snapshot.stoneHardness,
 		};
 
 		if(snapshot.stones != null)

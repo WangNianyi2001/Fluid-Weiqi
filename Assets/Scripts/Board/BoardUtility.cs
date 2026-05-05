@@ -49,6 +49,11 @@ public static class BoardUtility
 		public int accumulateChainStatsKernel;
 		public int compactChainStatsKernel;
 
+		public int[] ownerDataCache;
+		public int[] labelDataCache;
+		public bool ownerDataCacheValid;
+		public bool labelDataCacheValid;
+
 		public bool isInitialized;
 	}
 
@@ -108,6 +113,10 @@ public static class BoardUtility
 		ReleaseBuffer(ref c.compactChainStatBuffer);
 		ReleaseBuffer(ref c.compactChainStatCountBuffer);
 		c.activeLabelBuffer = null;
+		c.ownerDataCache = null;
+		c.labelDataCache = null;
+		c.ownerDataCacheValid = false;
+		c.labelDataCacheValid = false;
 		c.isInitialized = false;
 	}
 
@@ -180,28 +189,28 @@ public static class BoardUtility
 	{
 		if(!c.isInitialized || c.activeLabelBuffer == null || renderState == null)
 			return -1;
+		if(!TryEnsureLabelDataCache(c))
+			return -1;
 
 		int pixelIndex = AbsolutePositionToPixelIndex(renderState, absolutePosition);
 		if(pixelIndex < 0)
 			return -1;
 
-		int[] label = new int[1];
-		c.activeLabelBuffer.GetData(label, 0, pixelIndex, 1);
-		return label[0];
+		return c.labelDataCache[pixelIndex];
 	}
 
 	public static bool IsOccupiedAtAbsolutePosition(BoardCaches c, BoardState renderState, Vector2 absolutePosition)
 	{
 		if(!c.isInitialized || c.ownerBuffer == null || renderState == null)
 			return false;
+		if(!TryEnsureOwnerDataCache(c))
+			return false;
 
 		int pixelIndex = AbsolutePositionToPixelIndex(renderState, absolutePosition);
 		if(pixelIndex < 0)
 			return false;
 
-		int[] owner = new int[1];
-		c.ownerBuffer.GetData(owner, 0, pixelIndex, 1);
-		return owner[0] >= 0;
+		return c.ownerDataCache[pixelIndex] >= 0;
 	}
 
 	public static int GetChainLabelAtLogicalPosition(BoardCaches c, BoardState renderState, Vector2 logicalPosition)
@@ -330,7 +339,7 @@ public static class BoardUtility
 		{
 			c.distributionShader.SetTexture(c.distributionKernel, "_DistributionOutput", c.distributionMap);
 			c.distributionShader.SetFloat("_BoardSize", state.Size - 1);
-			c.distributionShader.SetFloat("_StoneVariance", Mathf.Max(0.0001f, state.StoneVariance));
+			c.distributionShader.SetFloat("_StoneHardness", Mathf.Clamp(state.StoneHardness, 0f, 0.9999f));
 			c.distributionShader.SetInt("_TextureWidth", c.distributionMap.width);
 			c.distributionShader.SetInt("_TextureHeight", c.distributionMap.height);
 
@@ -370,13 +379,14 @@ public static class BoardUtility
 
 	static void RenderTerritoryMap(BoardCaches c, BoardState state, IReadOnlyList<Color> playerColors)
 	{
+		c.ownerDataCacheValid = false;
+
 		c.distributionShader.SetTexture(c.territoryKernel, "_DistributionInput", c.distributionMap);
 		c.distributionShader.SetTexture(c.territoryKernel, "_TerritoryOutput", c.territoryMap);
 		c.distributionShader.SetBuffer(c.territoryKernel, "_OwnerBuffer", c.ownerBuffer);
 		c.distributionShader.SetInt("_TextureWidth", c.territoryMap.width);
 		c.distributionShader.SetInt("_TextureHeight", c.territoryMap.height);
 		c.distributionShader.SetInt("_PlayerCount", state.PlayerCount);
-		c.distributionShader.SetFloat("_Threshold", state.Threshold);
 
 		for(int player = 0; player < MaxPlayers; ++player)
 		{
@@ -407,6 +417,8 @@ public static class BoardUtility
 
 	static void RunConnectedComponents(BoardCaches c)
 	{
+		c.labelDataCacheValid = false;
+
 		c.distributionShader.SetInt("_TextureWidth", ComputeTextureSize);
 		c.distributionShader.SetInt("_TextureHeight", ComputeTextureSize);
 		c.distributionShader.SetBuffer(c.cclInitKernel, "_OwnerBuffer", c.ownerBuffer);
@@ -474,9 +486,45 @@ public static class BoardUtility
 
 		float normalizedX = Mathf.Clamp01(absolutePosition.x / span);
 		float normalizedY = Mathf.Clamp01(absolutePosition.y / span);
-		int pixelX = Mathf.Clamp(Mathf.RoundToInt(normalizedX * (ComputeTextureSize - 1)), 0, ComputeTextureSize - 1);
-		int pixelY = Mathf.Clamp(Mathf.RoundToInt(normalizedY * (ComputeTextureSize - 1)), 0, ComputeTextureSize - 1);
+		int pixelX = Mathf.Clamp((int)(normalizedX * ComputeTextureSize), 0, ComputeTextureSize - 1);
+		int pixelY = Mathf.Clamp((int)(normalizedY * ComputeTextureSize), 0, ComputeTextureSize - 1);
 		return pixelY * ComputeTextureSize + pixelX;
+	}
+
+	static bool TryEnsureOwnerDataCache(BoardCaches c)
+	{
+		if(!c.isInitialized || c.ownerBuffer == null)
+			return false;
+
+		int pixelCount = ComputeTextureSize * ComputeTextureSize;
+		if(c.ownerDataCache == null || c.ownerDataCache.Length != pixelCount)
+			c.ownerDataCache = new int[pixelCount];
+
+		if(!c.ownerDataCacheValid)
+		{
+			c.ownerBuffer.GetData(c.ownerDataCache);
+			c.ownerDataCacheValid = true;
+		}
+
+		return true;
+	}
+
+	static bool TryEnsureLabelDataCache(BoardCaches c)
+	{
+		if(!c.isInitialized || c.activeLabelBuffer == null)
+			return false;
+
+		int pixelCount = ComputeTextureSize * ComputeTextureSize;
+		if(c.labelDataCache == null || c.labelDataCache.Length != pixelCount)
+			c.labelDataCache = new int[pixelCount];
+
+		if(!c.labelDataCacheValid)
+		{
+			c.activeLabelBuffer.GetData(c.labelDataCache);
+			c.labelDataCacheValid = true;
+		}
+
+		return true;
 	}
 
 	static void AllocateConnectivityBuffers(BoardCaches c)
