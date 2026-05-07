@@ -52,14 +52,13 @@ public class LaoSongAiPlayer : AiPlayer
 	void ExecuteMove(BoardState state)
 	{
 		int rollCount = laoSongConfig != null ? laoSongConfig.MaxRollCount : 3;
-		float size = Mathf.Max(1f, state.Size);
 
 		for(int i = 0; i < rollCount; ++i)
 		{
 			if(cancelled || Match.IsEnded)
 				return;
 
-			Vector2 candidate = new Vector2(Random.value, Random.value) * size;
+			Vector2 candidate = Board.Current.SampleUniformAbsolutePosition();
 			if(Match.ReceivePlace(candidate))
 			{
 				NotifyMadeMove();

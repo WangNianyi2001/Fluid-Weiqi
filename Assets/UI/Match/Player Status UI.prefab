@@ -14,6 +14,7 @@ GameObject:
   - component: {fileID: 2299008810718912665}
   - component: {fileID: 8138755754645401808}
   - component: {fileID: 3462066299691626807}
+  - component: {fileID: 2144840805353473337}
   m_Layer: 5
   m_Name: Player Status UI
   m_TagString: Untagged
@@ -132,6 +133,18 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   rowPrefab: {fileID: 2342448114158659227, guid: 72a4f4e1b5ab9d74f819c5b86213159d, type: 3}
+--- !u!225 &2144840805353473337
+CanvasGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4723742734771679256}
+  m_Enabled: 1
+  m_Alpha: 1
+  m_Interactable: 0
+  m_BlocksRaycasts: 0
+  m_IgnoreParentGroups: 0
 --- !u!1001 &4858052520717398392
 PrefabInstance:
   m_ObjectHideFlags: 0

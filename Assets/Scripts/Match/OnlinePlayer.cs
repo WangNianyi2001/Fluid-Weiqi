@@ -94,10 +94,12 @@ public class OnlinePlayer : MatchPlayer
 		{
 			case MatchActionType.Place:
 				succeed = Match.ReceivePlace(request.position);
+				shouldNotify = !(Match is TrainingMatch);
 				break;
 			case MatchActionType.Pass:
 				Match.ReceivePass();
 				succeed = true;
+				shouldNotify = true;
 				break;
 			case MatchActionType.Remove:
 				Match.ReceiveRemove(request.position);
@@ -158,7 +160,8 @@ public class OnlinePlayer : MatchPlayer
 			return;
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Place, position))
 		{
-			receivingLocalMove = false;
+			if(!(Match is TrainingMatch))
+				receivingLocalMove = false;
 		}
 	}
 

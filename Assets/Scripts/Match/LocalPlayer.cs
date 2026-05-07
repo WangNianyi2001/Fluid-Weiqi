@@ -17,19 +17,24 @@ public class LocalPlayer : MatchPlayer
 		input.OnCursorEnter += OnCursorEnter;
 		input.OnCursorMove += OnCursorMove;
 		input.OnCursorExit += OnCursorExit;
-		input.OnPlace += OnPlace;
-		input.OnRemove += OnRemove;
-		input.OnPass += OnPass;
+		// OnPlace/OnRemove/OnPass are subscribed only while it's this player's turn,
+		// so at most one LocalPlayer is subscribed at any given time.
 	}
 
 	public override void RequestMove(BoardState state)
 	{
 		receivingMove = true;
+		input.OnPlace += OnPlace;
+		input.OnRemove += OnRemove;
+		input.OnPass += OnPass;
 	}
 
 	public override void CancelMove()
 	{
 		receivingMove = false;
+		input.OnPlace -= OnPlace;
+		input.OnRemove -= OnRemove;
+		input.OnPass -= OnPass;
 		Match.ReceiveCursorExit();
 	}
 
@@ -74,13 +79,16 @@ public class LocalPlayer : MatchPlayer
 
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Place, position))
 		{
-			receivingMove = false;
+			CancelMove();
 			return;
 		}
 
 		bool succeed = Match.ReceivePlace(position);
 		if(succeed)
+		{
+			CancelMove();
 			NotifyMadeMove();
+		}
 	}
 
 	void OnRemove(Vector2 position)
@@ -89,7 +97,7 @@ public class LocalPlayer : MatchPlayer
 			return;
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Remove, position))
 		{
-			receivingMove = false;
+			CancelMove();
 			return;
 		}
 		Match.ReceiveRemove(position);
@@ -102,10 +110,11 @@ public class LocalPlayer : MatchPlayer
 
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Pass, Vector2.zero))
 		{
-			receivingMove = false;
+			CancelMove();
 			return;
 		}
 
+		CancelMove();
 		Match.ReceivePass();
 		NotifyMadeMove();
 	}

@@ -23,15 +23,21 @@ public class SphericalBoard : Board
 
 	public override BoardUtility.BoardTopology Topology => BoardUtility.BoardTopology.Sphere;
 
-	/// <summary>
-	/// Sphere snap: x wraps in [0, 2N), y clamps in [0, N-1].
-	/// </summary>
-	public override Vector2 NormalizeAbsolutePosition(Vector2 absolutePosition)
+	public override Vector2 SampleUniformAbsolutePosition()
 	{
-		float N    = State.Size;
-		float absX = Mathf.Repeat(Mathf.Round(absolutePosition.x), 2f * N);
-		float absY = Mathf.Clamp(Mathf.Round(absolutePosition.y), 0f, N - 1f);
-		return new Vector2(absX, absY);
+		// Unity's onUnitSphere is uniform on sphere surface area.
+		Vector3 direction = Random.onUnitSphere;
+		Vector3 worldPoint = transform.TransformPoint(direction * SphereLocalRadius);
+		Vector2 boardLocal = WorldToBoardLocalPosition(worldPoint);
+		return BoardLocalToAbsolutePosition(boardLocal);
+	}
+
+	/// <summary>
+	/// Sphere has no edge; use half-circumference as a stable surrogate distance.
+	/// </summary>
+	public override float ComputeDistanceToBoundary(Vector2 absolutePosition)
+	{
+		return Mathf.Max(0f, State.Size);
 	}
 
 	protected new void Start()

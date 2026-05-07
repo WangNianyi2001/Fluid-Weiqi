@@ -38,7 +38,7 @@ public static class GameUtility
 		return value switch
 		{
 			BoardShape.Square => "正方形",
-			BoardShape.Sphere => "球形",
+			BoardShape.Sphere => "球面",
 			_ => null,
 		};
 	}

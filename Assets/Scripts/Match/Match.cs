@@ -74,7 +74,7 @@ public abstract class Match : MonoBehaviour
 		remove => onStateChanged -= value;
 	}
 
-	protected bool LastPlacementSucceed { get; private set; } = false;
+	protected bool LastPlacementSucceed { get; set; } = false;
 
 	protected Action onEnd;
 	public event Action OnEnd
@@ -255,6 +255,17 @@ public abstract class Match : MonoBehaviour
 		}
 	}
 
+	public bool IsCurrentPlayerLocallyControllable
+	{
+		get
+		{
+			if(isEnded || players.Count == 0)
+				return false;
+			int safeIndex = Mathf.Clamp(CurrentPlayerIndex, 0, players.Count - 1);
+			return players[safeIndex].CanReceiveLocalInput;
+		}
+	}
+
 	protected int TurnSequence => turnSeq;
 
 	public virtual int GetCurrentTurnNumber()
@@ -406,7 +417,7 @@ public abstract class Match : MonoBehaviour
 		SetPlayerPassState(CurrentPlayerIndex, false);
 
 		int safeIndex = Mathf.Clamp(CurrentPlayerIndex, 0, players.Count - 1);
-		if(!players[safeIndex].CanReceiveLocalInput)
+		if(!IsCurrentPlayerLocallyControllable)
 			Board.Current?.ClearPreview();
 
 		BoardState state = Board.Current?.State;

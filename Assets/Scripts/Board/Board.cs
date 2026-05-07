@@ -232,17 +232,27 @@ public abstract class Board : MonoBehaviour
 	public virtual BoardUtility.BoardTopology Topology => BoardUtility.BoardTopology.Flat;
 
 	/// <summary>
-	/// Snap and clamp/wrap an absolute board position to the nearest legal grid point.
-	/// Square: round then clamp to [0, Size-1].
-	/// Override in subclasses for other topologies.
+	/// Uniformly sample a legal absolute grid position on the board.
+	/// Override for non-square topologies.
 	/// </summary>
-	public virtual Vector2 NormalizeAbsolutePosition(Vector2 absolutePosition)
+	public virtual Vector2 SampleUniformAbsolutePosition()
 	{
-		float maxCoord = State.BoardStateExtent;
-		return new Vector2(
-			Mathf.Clamp(Mathf.Round(absolutePosition.x), 0f, maxCoord),
-			Mathf.Clamp(Mathf.Round(absolutePosition.y), 0f, maxCoord)
-		);
+		int boardSize = Mathf.Max(1, Mathf.RoundToInt(State.Size));
+		int x = Random.Range(0, boardSize);
+		int y = Random.Range(0, boardSize);
+		return new Vector2(x, y);
+	}
+
+	/// <summary>
+	/// Distance from a point to board boundary in absolute-grid units.
+	/// Override for topologies without physical boundary.
+	/// </summary>
+	public virtual float ComputeDistanceToBoundary(Vector2 position)
+	{
+		float boardExtent = Mathf.Max(0f, State.BoardStateExtent);
+		return Mathf.Min(
+			Mathf.Min(position.x, boardExtent - position.x),
+			Mathf.Min(position.y, boardExtent - position.y));
 	}
 
 	public abstract Bounds GetWorldBounds();

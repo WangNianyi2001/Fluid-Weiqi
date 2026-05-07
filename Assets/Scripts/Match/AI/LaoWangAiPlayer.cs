@@ -53,7 +53,10 @@ public class LaoWangAiPlayer : AiPlayer
 			if(evaluationDelay > 0f)
 				yield return new WaitForSeconds(evaluationDelay);
 
-			Vector2 point = SampleBoardPoint(state);
+			Board board = Board.Current;
+			Vector2 point = board != null
+				? board.SampleUniformAbsolutePosition()
+				: new Vector2(Random.Range(0, Mathf.Max(1, Mathf.RoundToInt(state.Size))), Random.Range(0, Mathf.Max(1, Mathf.RoundToInt(state.Size))));
 			if(!IsLegalPlacement(state, point))
 				continue;
 
@@ -79,21 +82,12 @@ public class LaoWangAiPlayer : AiPlayer
 		NotifyMadeMove();
 	}
 
-	Vector2 SampleBoardPoint(BoardState state)
-	{
-		int boardSize = Mathf.Max(1, Mathf.RoundToInt(state.Size));
-		int x = Random.Range(0, boardSize);
-		int y = Random.Range(0, boardSize);
-		return new Vector2(x, y);
-	}
-
 	bool IsLegalPlacement(BoardState state, Vector2 point)
 	{
-		if(point.x < 0 || point.x >= state.Size || point.y < 0 || point.y >= state.Size)
-			return false;
-
 		if(!evaluationCaches.isInitialized)
 			BoardUtility.Initialize(evaluationCaches);
+
+		evaluationCaches.topology = Board.Current.Topology;
 
 		Color[] playerColors = BuildPlayerColors(state.PlayerCount);
 		BoardUtility.RenderAnalysis(evaluationCaches, state, playerColors);
@@ -127,10 +121,12 @@ public class LaoWangAiPlayer : AiPlayer
 
 	float ComputeNearestDistanceToOwnStoneOrEdge(BoardState state, Vector2 point)
 	{
-		float boardExtent = Mathf.Max(0f, state.Size - 1f);
-		float edgeDistance = Mathf.Min(
-			Mathf.Min(point.x, boardExtent - point.x),
-			Mathf.Min(point.y, boardExtent - point.y));
+		Board board = Board.Current;
+		float edgeDistance = board != null
+			? board.ComputeDistanceToBoundary(point)
+			: Mathf.Min(
+				Mathf.Min(point.x, Mathf.Max(0f, state.Size - 1f) - point.x),
+				Mathf.Min(point.y, Mathf.Max(0f, state.Size - 1f) - point.y));
 
 		float nearestOwnStoneDistance = float.PositiveInfinity;
 		IReadOnlyList<StonePlacement> ownStones = state.GetStones(PlayerIndex);

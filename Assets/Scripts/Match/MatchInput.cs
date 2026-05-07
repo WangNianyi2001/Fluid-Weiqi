@@ -34,6 +34,11 @@ public class MatchInput : MonoBehaviour
 	public event Action OnPass;
 	public event Action<Vector2> OnRotateDrag;
 
+	public void SubmitPass()
+	{
+		OnPass?.Invoke();
+	}
+
 	protected void Awake()
 	{
 		Shared = this;
@@ -53,7 +58,7 @@ public class MatchInput : MonoBehaviour
 
 	void ProcessKeyboard()
 	{
-		if(Input.GetKeyDown(KeyCode.P))
+		if(Input.GetKeyDown(KeyCode.None))  // Replaced by PassTurnButtonUi
 			OnPass?.Invoke();
 	}
 
