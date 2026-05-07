@@ -26,8 +26,7 @@ public class OnlinePlayer : MatchPlayer
 
 		if(role == OnlinePlayerRole.LocalToRemote)
 		{
-			input = match.gameObject.AddComponent<MatchInput>();
-			input.enabled = false;
+			input = MatchInput.GetOrCreate(match);
 			input.OnCursorEnter += OnCursorEnter;
 			input.OnCursorMove += OnCursorMove;
 			input.OnCursorExit += OnCursorExit;
@@ -44,8 +43,6 @@ public class OnlinePlayer : MatchPlayer
 
 		if(receivingLocalMove)
 		{
-			if(input != null)
-				input.enabled = isConnected;
 			if(!isConnected)
 				Match.ReceiveCursorExit();
 			return;
@@ -63,8 +60,6 @@ public class OnlinePlayer : MatchPlayer
 	{
 		waitingForRemoteAction = false;
 		receivingLocalMove = false;
-		if(input != null)
-			input.enabled = false;
 		Match.ReceiveCursorExit();
 	}
 
@@ -80,8 +75,8 @@ public class OnlinePlayer : MatchPlayer
 			NotifyMadeMove();
 		}
 
-		if(receivingLocalMove && input != null)
-			input.enabled = alive;
+		if(receivingLocalMove && !alive)
+			Match.ReceiveCursorExit();
 	}
 
 	public bool TryHandleRemoteRequest(MatchActionRequest request)
@@ -134,8 +129,6 @@ public class OnlinePlayer : MatchPlayer
 		input.OnPlace -= OnPlace;
 		input.OnRemove -= OnRemove;
 		input.OnPass -= OnPass;
-
-		Destroy(input);
 	}
 
 	void OnCursorEnter(Vector2 position)
@@ -166,7 +159,6 @@ public class OnlinePlayer : MatchPlayer
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Place, position))
 		{
 			receivingLocalMove = false;
-			input.enabled = false;
 		}
 	}
 
@@ -177,7 +169,6 @@ public class OnlinePlayer : MatchPlayer
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Remove, position))
 		{
 			receivingLocalMove = false;
-			input.enabled = false;
 		}
 	}
 
@@ -188,7 +179,6 @@ public class OnlinePlayer : MatchPlayer
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Pass, Vector2.zero))
 		{
 			receivingLocalMove = false;
-			input.enabled = false;
 		}
 	}
 }

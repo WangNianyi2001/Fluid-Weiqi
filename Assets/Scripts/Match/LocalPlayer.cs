@@ -12,8 +12,7 @@ public class LocalPlayer : MatchPlayer
 	{
 		base.Initialize(match, playerIndex);
 
-		input = match.gameObject.AddComponent<MatchInput>();
-		input.enabled = false;
+		input = MatchInput.GetOrCreate(match);
 
 		input.OnCursorEnter += OnCursorEnter;
 		input.OnCursorMove += OnCursorMove;
@@ -26,14 +25,11 @@ public class LocalPlayer : MatchPlayer
 	public override void RequestMove(BoardState state)
 	{
 		receivingMove = true;
-		input.enabled = true;
 	}
 
 	public override void CancelMove()
 	{
 		receivingMove = false;
-		if(input != null)
-			input.enabled = false;
 		Match.ReceiveCursorExit();
 	}
 
@@ -48,8 +44,6 @@ public class LocalPlayer : MatchPlayer
 		input.OnPlace -= OnPlace;
 		input.OnRemove -= OnRemove;
 		input.OnPass -= OnPass;
-
-		Destroy(input);
 	}
 
 	void OnCursorEnter(Vector2 position)
@@ -81,7 +75,6 @@ public class LocalPlayer : MatchPlayer
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Place, position))
 		{
 			receivingMove = false;
-			input.enabled = false;
 			return;
 		}
 
@@ -97,7 +90,6 @@ public class LocalPlayer : MatchPlayer
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Remove, position))
 		{
 			receivingMove = false;
-			input.enabled = false;
 			return;
 		}
 		Match.ReceiveRemove(position);
@@ -111,7 +103,6 @@ public class LocalPlayer : MatchPlayer
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Pass, Vector2.zero))
 		{
 			receivingMove = false;
-			input.enabled = false;
 			return;
 		}
 

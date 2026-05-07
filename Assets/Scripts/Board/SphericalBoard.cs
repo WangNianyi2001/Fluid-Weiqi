@@ -14,6 +14,10 @@ public class SphericalBoard : Board
 	const float TwoPi = Mathf.PI * 2f;
 	const float SphereLocalRadius = 0.5f;
 	const float RotateSpeed = 180f;
+	[SerializeField] Transform boardAnchor;
+	MatchInput input;
+
+	Transform BoardAnchor => boardAnchor != null ? boardAnchor : (transform.parent != null ? transform.parent : transform);
 
 	// ── Topology ─────────────────────────────────────────────────────────
 
@@ -30,18 +34,61 @@ public class SphericalBoard : Board
 		return new Vector2(absX, absY);
 	}
 
+	protected new void Start()
+	{
+		base.Start();
+
+		TryBindInput();
+	}
+
 	protected void Update()
 	{
-		if(!Input.GetMouseButton(1))
+		if(input != null)
 			return;
 
-		float dx = Input.GetAxisRaw("Mouse X");
-		float dy = Input.GetAxisRaw("Mouse Y");
-		if(Mathf.Approximately(dx, 0f) && Mathf.Approximately(dy, 0f))
+		TryBindInput();
+	}
+
+	protected new void OnDestroy()
+	{
+		if(input != null)
+			input.OnRotateDrag -= OnRotateDrag;
+
+		base.OnDestroy();
+	}
+
+	void TryBindInput()
+	{
+		if(input != null || Match.Current == null)
 			return;
 
-		transform.Rotate(Vector3.up, dx * RotateSpeed * Time.unscaledDeltaTime, Space.World);
-		transform.Rotate(transform.right, -dy * RotateSpeed * Time.unscaledDeltaTime, Space.World);
+		input = MatchInput.GetOrCreate(Match.Current);
+		if(input != null)
+			input.OnRotateDrag += OnRotateDrag;
+	}
+
+	void OnRotateDrag(Vector2 delta)
+	{
+		if(delta.sqrMagnitude <= 0f)
+			return;
+
+		Camera cam = Camera.main;
+		if(cam == null)
+			return;
+
+		float dx = delta.x;
+		float dy = delta.y;
+		Vector3 camUp = cam.transform.up;
+		Vector3 camForward = cam.transform.forward;
+		Vector3 camRight = Vector3.Cross(camForward, camUp);
+		if(camRight.sqrMagnitude < 1e-6f)
+			camRight = cam.transform.right;
+		else
+			camRight.Normalize();
+
+		Transform anchor = BoardAnchor;
+		anchor.Rotate(camUp, -dx * RotateSpeed * Time.unscaledDeltaTime, Space.World);
+		anchor.Rotate(camRight, -dy * RotateSpeed * Time.unscaledDeltaTime, Space.World);
 	}
 
 	// ── Coordinate conversion ────────────────────────────────────────────

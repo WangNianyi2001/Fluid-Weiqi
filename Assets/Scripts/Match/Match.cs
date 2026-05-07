@@ -43,6 +43,7 @@ public abstract class Match : MonoBehaviour
 	protected void Awake()
 	{
 		Current = this;
+		MatchInput.GetOrCreate(this);
 	}
 
 	protected void Start()

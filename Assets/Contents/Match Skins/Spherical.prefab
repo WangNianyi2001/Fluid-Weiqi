@@ -28,7 +28,8 @@ Transform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 1
-  m_Children: []
+  m_Children:
+  - {fileID: 9119701543222754380}
   m_Father: {fileID: 3354198029575580927}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2112429546491738368
@@ -89,8 +90,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fa7155796051b734daa718462081dc5f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_BindingMode: 1
-  m_FollowOffset: {x: 0, y: 0, z: -2.5}
+  m_BindingMode: 4
+  m_FollowOffset: {x: 0, y: 0, z: -8}
   m_XDamping: 1
   m_YDamping: 1
   m_ZDamping: 1
@@ -143,7 +144,6 @@ Transform:
   m_Children:
   - {fileID: 2741739182033871656}
   - {fileID: 5390422084507346241}
-  - {fileID: 9119701543222754380}
   - {fileID: 3677175773384964730}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -187,12 +187,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 6350322153563528718}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 0.99, y: 0.99, z: 0.99}
   m_ConstrainProportionsScale: 1
   m_Children: []
-  m_Father: {fileID: 3354198029575580927}
+  m_Father: {fileID: 2741739182033871656}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!33 &7071400790570092841
 MeshFilter:
@@ -388,7 +388,7 @@ Transform:
   m_GameObject: {fileID: 7995647493496341536}
   serializedVersion: 2
   m_LocalRotation: {x: -0.000000028773007, y: -0.00000007197086, z: -0.0000000090964205, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: -2.5}
+  m_LocalPosition: {x: 0, y: 0, z: -8}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -416,7 +416,7 @@ MonoBehaviour:
   m_LookAt: {fileID: 2741739182033871656}
   m_Follow: {fileID: 2741739182033871656}
   m_Lens:
-    FieldOfView: 30
+    FieldOfView: 10
     OrthographicSize: 10
     NearClipPlane: 0.01
     FarClipPlane: 100

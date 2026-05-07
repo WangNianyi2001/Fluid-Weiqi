@@ -4,6 +4,21 @@ using System;
 public class MatchInput : MonoBehaviour
 {
 	const float PreviewPositionEpsilon = 1e-3f;
+	public static MatchInput Shared { get; private set; }
+
+	public static MatchInput GetOrCreate(Match match)
+	{
+		if(match == null)
+			return null;
+
+		if(Shared != null && Shared.gameObject == match.gameObject)
+			return Shared;
+
+		Shared = match.GetComponent<MatchInput>();
+		if(Shared == null)
+			Shared = match.gameObject.AddComponent<MatchInput>();
+		return Shared;
+	}
 
 	Camera Camera => Camera.main;
 	LayerMask RaycastMask => Physics.DefaultRaycastLayers;
@@ -11,14 +26,24 @@ public class MatchInput : MonoBehaviour
 	bool hasCursorPosition;
 	Vector2 lastCursorPosition;
 
-	bool shiftDown = false, capslocked = false;
-
 	public event Action<Vector2> OnCursorEnter;
 	public event Action<Vector2> OnCursorMove;
 	public event Action OnCursorExit;
 	public event Action<Vector2> OnPlace;
 	public event Action<Vector2> OnRemove;
 	public event Action OnPass;
+	public event Action<Vector2> OnRotateDrag;
+
+	protected void Awake()
+	{
+		Shared = this;
+	}
+
+	protected void OnDestroy()
+	{
+		if(Shared == this)
+			Shared = null;
+	}
 
 	protected void Update()
 	{
@@ -28,16 +53,19 @@ public class MatchInput : MonoBehaviour
 
 	void ProcessKeyboard()
 	{
-		if(Input.GetKeyDown(KeyCode.CapsLock))
-			capslocked = !capslocked;
-		shiftDown = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-
 		if(Input.GetKeyDown(KeyCode.P))
 			OnPass?.Invoke();
 	}
 
 	void ProcessMouse()
 	{
+		if(Input.GetMouseButton(1))
+		{
+			Vector2 rotateDelta = new Vector2(Input.GetAxisRaw("Mouse X"), Input.GetAxisRaw("Mouse Y"));
+			if(rotateDelta.sqrMagnitude > 0)
+				OnRotateDrag?.Invoke(rotateDelta);
+		}
+
 		if(Camera == null || Board.Current == null)
 		{
 			EmitCursorExitIfNeeded();
@@ -51,9 +79,6 @@ public class MatchInput : MonoBehaviour
 		}
 
 		Vector2 absolutePosition = Board.Current.WorldToAbsolutePosition(hit.point);
-		bool freePlace = shiftDown ^ capslocked;
-		if(!freePlace)
-			absolutePosition = Board.Current.NormalizeAbsolutePosition(absolutePosition);
 
 		if(!hasCursorPosition)
 		{
