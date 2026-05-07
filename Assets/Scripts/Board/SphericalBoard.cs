@@ -161,7 +161,6 @@ public class SphericalBoard : Board
 
 		int boardSize = Mathf.Max(2, Mathf.RoundToInt(State.Size));
 		GridMaterial.SetFloat("_BoardSize", boardSize);
-		GridMaterial.SetFloat("_ShowStarPoints", 0f);
-		GridMaterial.SetFloat("_ShowGridLines", 0f);
+		GridMaterial.SetFloat("_GridDisplayMode", 2f);
 	}
 }

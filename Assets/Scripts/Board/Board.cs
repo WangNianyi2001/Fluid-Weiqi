@@ -203,10 +203,8 @@ public abstract class Board : MonoBehaviour
 
 		if(GridMaterial.HasProperty("_Topology"))
 			GridMaterial.SetFloat("_Topology", (float)Topology);
-		if(GridMaterial.HasProperty("_ShowStarPoints"))
-			GridMaterial.SetFloat("_ShowStarPoints", 1f);
-		if(GridMaterial.HasProperty("_ShowGridLines"))
-			GridMaterial.SetFloat("_ShowGridLines", 1f);
+		if(GridMaterial.HasProperty("_GridDisplayMode"))
+			GridMaterial.SetFloat("_GridDisplayMode", 0f);
 	}
 	#endregion
 
