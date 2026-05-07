@@ -29,7 +29,8 @@ public class HostLobby : Lobby
 		};
 		yield return new()
 		{
-			type = PlayerType.Local,
+			type = PlayerType.Ai,
+			aiId = "lao-song",
 			isHost = false,
 			locator = hostLocalLocator,
 			colorIndex = 1,
@@ -76,6 +77,8 @@ public class HostLobby : Lobby
 			boardSize = 19,
 			stoneHardness = 0.25f,
 			boardShape = BoardShape.Square,
+			useShrinking = false,
+			shrinkSpeed = 0.05f,
 		};
 	}
 	#endregion

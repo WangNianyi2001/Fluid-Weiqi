@@ -42,6 +42,7 @@ public sealed class BoardStateSnapshot
 	public int playerCount;
 	public int size;
 	public float stoneHardness;
+	public float shrinkMargin;
 	public List<StonePlacementSnapshot> stones = new();
 }
 
@@ -99,6 +100,7 @@ public static class NetworkSnapshotUtility
 			playerCount = state.PlayerCount,
 			size = Mathf.RoundToInt(state.Size),
 			stoneHardness = state.StoneHardness,
+			shrinkMargin = state.ShrinkMargin,
 		};
 
 		for(int player = 0; player < state.PlayerCount; ++player)
@@ -129,6 +131,7 @@ public static class NetworkSnapshotUtility
 		{
 			StoneHardness = snapshot.stoneHardness,
 		};
+		state.SetShrinkMargin(snapshot.shrinkMargin);
 
 		if(snapshot.stones != null)
 		{

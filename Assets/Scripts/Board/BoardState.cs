@@ -25,6 +25,7 @@ public class BoardState
 		PlayerCount = original.PlayerCount;
 		Size = original.Size;
 		StoneHardness = original.StoneHardness;
+		ShrinkMargin = original.ShrinkMargin;
 		nextStoneId = original.nextStoneId;
 		stones = original.stones.Select(ps => new List<StonePlacement>(ps)).ToList();
 	}
@@ -52,6 +53,27 @@ public class BoardState
 	public float Size { get; private set; } = 19;
 	public float BoardStateExtent => Size - 1;
 	public float StoneHardness { get; set; } = 0.5f;
+	/// <summary>
+	/// Amount of size removed from the initial board size.
+	/// Initial size can be recovered by: InitialSize = Size + ShrinkMargin.
+	/// </summary>
+	public float ShrinkMargin { get; private set; } = 0f;
+
+	/// <summary>
+	/// Internal method to set shrink margin (called by Board.TryShrink).
+	/// </summary>
+	internal void SetShrinkMargin(float margin)
+	{
+		ShrinkMargin = margin;
+	}
+
+	/// <summary>
+	/// Internal method to set board size after shrink.
+	/// </summary>
+	internal void SetSize(float size)
+	{
+		Size = Mathf.Max(1f, size);
+	}
 
 	public void AddStone(int player, Vector2 position, float strength = 1)
 	{

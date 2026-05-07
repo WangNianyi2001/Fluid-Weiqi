@@ -15,6 +15,8 @@ public struct MatchRule
 	public int boardSize;
 	public float stoneHardness;
 	public BoardShape boardShape;
+	public bool useShrinking;
+	public float shrinkSpeed;
 }
 
 public struct PlayerInfo
@@ -398,6 +400,22 @@ public abstract class Match : MonoBehaviour
 		turnSeq += 1;
 		if(!isEnded)
 			StepPlayerIndex();
+
+		// Try shrinking the board if enabled
+		if(!isEnded && Rule.useShrinking)
+		{
+			Board board = Board.Current;
+			if(board != null)
+			{
+				BoardState shrunkState = board.TryShrink(board.State, Rule.shrinkSpeed);
+				if(shrunkState == null)
+				{
+					EndMatch();
+					return;
+				}
+				board.SetState(shrunkState);
+			}
+		}
 
 		if(ShouldBroadcastAuthorityResult())
 			BroadcastAuthorityResult(true, null, playerIndex, pendingAuthorityActionSeq);

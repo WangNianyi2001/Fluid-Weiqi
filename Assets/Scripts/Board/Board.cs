@@ -102,9 +102,32 @@ public abstract class Board : MonoBehaviour
 	#region State management
 	public void SetState(BoardState newState)
 	{
+		if(newState == null)
+		{
+			Debug.LogWarning("Attempting to set null board state.", this);
+			return;
+		}
+
 		state = newState;
+		UpdateBoardScale();
 		UpdateGridMaterialParameters();
 		RefreshRendering();
+	}
+
+	/// <summary>
+	/// Update board anchor scale based on current size compared to initial size.
+	/// Override in subclasses to apply topology-specific scaling.
+	/// </summary>
+	protected virtual void UpdateBoardScale()
+	{
+		// Base implementation for square board
+		if(transform.parent == null)
+			return;
+
+		float size = Mathf.Max(1f, State.Size);
+		float initialSize = Mathf.Max(size, size + State.ShrinkMargin);
+		float scaleRatio = size / initialSize;
+		transform.parent.localScale = Vector3.one * scaleRatio;
 	}
 
 	public void RefreshRendering()
@@ -254,6 +277,13 @@ public abstract class Board : MonoBehaviour
 			Mathf.Min(position.x, boardExtent - position.x),
 			Mathf.Min(position.y, boardExtent - position.y));
 	}
+
+	/// <summary>
+	/// Attempt to shrink the board by producing a new cropped BoardState.
+	/// Returns new BoardState if successful, null if board is already at minimum size.
+	/// Caller should call SetState with result and EndMatch if null is returned.
+	/// </summary>
+	public abstract BoardState TryShrink(BoardState current, float deltaMargin);
 
 	public abstract Bounds GetWorldBounds();
 	public abstract Vector2 WorldToBoardLocalPosition(Vector3 worldPosition);
