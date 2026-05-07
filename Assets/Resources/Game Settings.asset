@@ -14,6 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   defaultMatchModeId: traditional
   defaultMatchSkinPrefab: {fileID: 3292742582923757440, guid: eb8a6146621f6d5459af132a1822be4c, type: 3}
+  defaultSphericalMatchSkinPrefab: {fileID: 3292742582923757440, guid: a2ae6c5a14c7413439b13d78c17c84b7, type: 3}
   legacyMatchModes:
   - {fileID: 11400000, guid: e57dd985eca19df44bf15634ad27a8fb, type: 2}
   - {fileID: 11400000, guid: 2bcae83d97d660f488839c78f4b7c79f, type: 2}

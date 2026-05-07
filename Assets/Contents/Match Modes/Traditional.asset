@@ -14,9 +14,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   modeId: traditional
   displayName: "\u4F20\u7EDF\u6A21\u5F0F"
-  isDlcMode: 0
   isTurnBased: 1
   uiAssemblyPrefabs:
   - {fileID: 6630367312946851258, guid: 456b346b2c700cd4abcb48413019faf8, type: 3}
   - {fileID: 4723742734771679256, guid: b33326b9a4aed0d4ea93e9e64ed26ede, type: 3}
   - {fileID: 8406701659227100585, guid: 413968598fb6fff40994cb099a52db6f, type: 3}
+  - {fileID: 8075480796835296303, guid: 5a55976fe699ff74e97d5403361057d8, type: 3}
+  - {fileID: 8536371182308499397, guid: d8ef9cfc717f8b5428bd8b01201de76b, type: 3}

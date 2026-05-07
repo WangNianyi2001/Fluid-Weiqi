@@ -12,28 +12,29 @@ public class LocalPlayer : MatchPlayer
 	{
 		base.Initialize(match, playerIndex);
 
-		input = match.gameObject.AddComponent<MatchInput>();
-		input.enabled = false;
+		input = MatchInput.GetOrCreate(match);
 
 		input.OnCursorEnter += OnCursorEnter;
 		input.OnCursorMove += OnCursorMove;
 		input.OnCursorExit += OnCursorExit;
-		input.OnPlace += OnPlace;
-		input.OnRemove += OnRemove;
-		input.OnPass += OnPass;
+		// OnPlace/OnRemove/OnPass are subscribed only while it's this player's turn,
+		// so at most one LocalPlayer is subscribed at any given time.
 	}
 
 	public override void RequestMove(BoardState state)
 	{
 		receivingMove = true;
-		input.enabled = true;
+		input.OnPlace += OnPlace;
+		input.OnRemove += OnRemove;
+		input.OnPass += OnPass;
 	}
 
 	public override void CancelMove()
 	{
 		receivingMove = false;
-		if(input != null)
-			input.enabled = false;
+		input.OnPlace -= OnPlace;
+		input.OnRemove -= OnRemove;
+		input.OnPass -= OnPass;
 		Match.ReceiveCursorExit();
 	}
 
@@ -48,8 +49,6 @@ public class LocalPlayer : MatchPlayer
 		input.OnPlace -= OnPlace;
 		input.OnRemove -= OnRemove;
 		input.OnPass -= OnPass;
-
-		Destroy(input);
 	}
 
 	void OnCursorEnter(Vector2 position)
@@ -80,14 +79,16 @@ public class LocalPlayer : MatchPlayer
 
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Place, position))
 		{
-			receivingMove = false;
-			input.enabled = false;
+			CancelMove();
 			return;
 		}
 
 		bool succeed = Match.ReceivePlace(position);
 		if(succeed)
+		{
+			CancelMove();
 			NotifyMadeMove();
+		}
 	}
 
 	void OnRemove(Vector2 position)
@@ -96,8 +97,7 @@ public class LocalPlayer : MatchPlayer
 			return;
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Remove, position))
 		{
-			receivingMove = false;
-			input.enabled = false;
+			CancelMove();
 			return;
 		}
 		Match.ReceiveRemove(position);
@@ -110,11 +110,11 @@ public class LocalPlayer : MatchPlayer
 
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Pass, Vector2.zero))
 		{
-			receivingMove = false;
-			input.enabled = false;
+			CancelMove();
 			return;
 		}
 
+		CancelMove();
 		Match.ReceivePass();
 		NotifyMadeMove();
 	}

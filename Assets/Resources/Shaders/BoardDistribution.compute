@@ -39,50 +39,94 @@ int _Player2StoneCount;
 int _Player3StoneCount;
 
 float _BoardSize;
-float _StoneVariance;
-float _Threshold;
+float _StoneHardness;
 float _AreaEpsilon;
 int _PlayerCount;
 int _TextureWidth;
 int _TextureHeight;
+int _Topology; // 0 = Flat, 1 = Sphere
 
 float4 _PlayerColor0;
 float4 _PlayerColor1;
 float4 _PlayerColor2;
 float4 _PlayerColor3;
 
-float GaussianContribution(float2 boardPosition, float2 center, float strength, float inverseDoubleVariance)
+static const float powerThreshold = 4.0;
+static const float HLSL_PI      = 3.14159265358979;
+static const float HLSL_TWO_PI  = 6.28318530717959;
+static const float HLSL_HALF_PI = 1.57079632679490;
+
+// ---- Flat kernel -------------------------------------------------------
+
+float PowerContribution(float2 boardPosition, float2 center, float strength)
 {
+	// Preparation
 	float2 delta = boardPosition - center;
-	float distanceSquared = dot(delta, delta);
-	return strength * exp(-distanceSquared * inverseDoubleVariance);
+	float r = max(length(delta), 0.001);
+	float rNorm = 2.0 * r / sqrt(strength);
+	// Form
+	float alpha = 1.0 / (1.0 - min(0.99, _StoneHardness));
+	float res = exp((1.0 - rNorm) * alpha);
+	res = clamp(0, 16, res);
+	res = powerThreshold * tanh(res / powerThreshold); // smooth clamp
+	return res;
 }
 
 float AccumulateDensity(float2 boardPosition, StructuredBuffer<StonePlacement> stones, int stoneCount)
 {
 	float density = 0.0;
-	float inverseDoubleVariance = 0.5 / _StoneVariance;
 
 	for(int index = 0; index < stoneCount; ++index)
 	{
 		StonePlacement stone = stones[index];
-		float2 center = stone.position;
-		density += GaussianContribution(boardPosition, center, stone.strength, inverseDoubleVariance);
-
-		float rightX = 2.0 * _BoardSize - center.x;
-		float topY = 2.0 * _BoardSize - center.y;
-
-		density += GaussianContribution(boardPosition, float2(-center.x, center.y), stone.strength, inverseDoubleVariance);
-		density += GaussianContribution(boardPosition, float2(rightX, center.y), stone.strength, inverseDoubleVariance);
-		density += GaussianContribution(boardPosition, float2(center.x, -center.y), stone.strength, inverseDoubleVariance);
-		density += GaussianContribution(boardPosition, float2(center.x, topY), stone.strength, inverseDoubleVariance);
-
-		density += GaussianContribution(boardPosition, float2(-center.x, -center.y), stone.strength, inverseDoubleVariance);
-		density += GaussianContribution(boardPosition, float2(-center.x, topY), stone.strength, inverseDoubleVariance);
-		density += GaussianContribution(boardPosition, float2(rightX, -center.y), stone.strength, inverseDoubleVariance);
-		density += GaussianContribution(boardPosition, float2(rightX, topY), stone.strength, inverseDoubleVariance);
+		density += PowerContribution(boardPosition, stone.position, stone.strength);
 	}
 
+	return density;
+}
+
+// ---- Sphere kernel -----------------------------------------------------
+
+// Convert absolute grid coords (x ∈ [0, 2N), y ∈ [0, N)) to lon/lat (radians).
+float2 AbsToLonLat(float2 abs, float N)
+{
+	float lon = (abs.x / (2.0 * N)) * HLSL_TWO_PI;  // [0, 2π)
+	float lat = (abs.y / N) * HLSL_PI - HLSL_HALF_PI; // [-π/2, π/2)
+	return float2(lon, lat);
+}
+
+// Lon/lat to unit direction vector (Y-up).
+float3 LonLatToDir(float lon, float lat)
+{
+	float cosLat = cos(lat);
+	return float3(cosLat * sin(lon), sin(lat), cosLat * cos(lon));
+}
+
+// Great-circle arc length on sphere of radius N/π (so equatorial spacing ≈ 1).
+float SphereContribution(float2 boardPosition, float2 center, float strength)
+{
+	float N = _BoardSize + 1.0;
+	float2 posLL    = AbsToLonLat(boardPosition, N);
+	float2 centerLL = AbsToLonLat(center, N);
+	float3 d1 = LonLatToDir(posLL.x, posLL.y);
+	float3 d2 = LonLatToDir(centerLL.x, centerLL.y);
+	float angle = acos(clamp(dot(d1, d2), -1.0, 1.0));
+	float r = angle * (N / HLSL_PI);  // arc length ≈ Euclidean units
+	float rNorm = 2.0 * max(r, 0.001) / sqrt(strength);
+	float alpha = 1.0 / (1.0 - min(0.99, _StoneHardness));
+	float res = exp((1.0 - rNorm) * alpha);
+	res = clamp(0, 16, res);
+	return powerThreshold * tanh(res / powerThreshold);
+}
+
+float AccumulateDensitySphere(float2 boardPosition, StructuredBuffer<StonePlacement> stones, int stoneCount)
+{
+	float density = 0.0;
+	for(int index = 0; index < stoneCount; ++index)
+	{
+		StonePlacement stone = stones[index];
+		density += SphereContribution(boardPosition, stone.position, stone.strength);
+	}
 	return density;
 }
 
@@ -94,6 +138,23 @@ int ToIndex(int2 coord)
 bool InBounds(int2 coord)
 {
 	return coord.x >= 0 && coord.y >= 0 && coord.x < _TextureWidth && coord.y < _TextureHeight;
+}
+
+// Returns the neighbour after applying seam-wrap for sphere topology.
+// Out-of-bounds y still returns an invalid coord (x=-1).
+int2 GetNeighbor(int2 coord, int2 offset)
+{
+	int2 n = coord + offset;
+	if(_Topology == 1) // Sphere: wrap x
+		n.x = (n.x + _TextureWidth) % _TextureWidth;
+	return n;
+}
+
+bool NeighborInBounds(int2 n)
+{
+	if(_Topology == 1) // x already wrapped, only check y
+		return n.y >= 0 && n.y < _TextureHeight;
+	return InBounds(n);
 }
 
 float4 GetPlayerColor(int player)
@@ -117,14 +178,30 @@ void CSDistribution(uint3 id : SV_DispatchThreadID)
 
 	int2 coord = int2(id.xy);
 	float2 uv = (float2(coord) + 0.5) / float2(_TextureWidth, _TextureHeight);
-	float2 boardPosition = uv * _BoardSize;
 
-	float4 density = float4(
-		AccumulateDensity(boardPosition, _Player0Stones, _Player0StoneCount),
-		AccumulateDensity(boardPosition, _Player1Stones, _Player1StoneCount),
-		AccumulateDensity(boardPosition, _Player2Stones, _Player2StoneCount),
-		AccumulateDensity(boardPosition, _Player3Stones, _Player3StoneCount)
-	);
+	float4 density;
+	if(_Topology == 1) // Sphere
+	{
+		// boardPosition: x ∈ [0, 2N), y ∈ [0, N)  where N = _BoardSize + 1
+		float N = _BoardSize + 1.0;
+		float2 boardPosition = float2(uv.x * 2.0 * N, uv.y * N);
+		density = float4(
+			AccumulateDensitySphere(boardPosition, _Player0Stones, _Player0StoneCount),
+			AccumulateDensitySphere(boardPosition, _Player1Stones, _Player1StoneCount),
+			AccumulateDensitySphere(boardPosition, _Player2Stones, _Player2StoneCount),
+			AccumulateDensitySphere(boardPosition, _Player3Stones, _Player3StoneCount)
+		);
+	}
+	else // Flat
+	{
+		float2 boardPosition = uv * _BoardSize;
+		density = float4(
+			AccumulateDensity(boardPosition, _Player0Stones, _Player0StoneCount),
+			AccumulateDensity(boardPosition, _Player1Stones, _Player1StoneCount),
+			AccumulateDensity(boardPosition, _Player2Stones, _Player2StoneCount),
+			AccumulateDensity(boardPosition, _Player3Stones, _Player3StoneCount)
+		);
+	}
 
 	_DistributionOutput[coord] = density;
 }
@@ -162,7 +239,7 @@ void CSTerritory(uint3 id : SV_DispatchThreadID)
 		owner = 3;
 	}
 
-	bool occupied = totalDensity >= _Threshold && owner < _PlayerCount;
+	bool occupied = totalDensity >= 1.0 && owner < _PlayerCount;
 	if(!occupied)
 	{
 		_OwnerBuffer[index] = -1;
@@ -257,17 +334,17 @@ void CSPropagateLabels(uint3 id : SV_DispatchThreadID)
 	int best = _LabelBufferRead[index];
 	int current = best;
 
-	int2 neighbors[4] = {
-		coord + int2(1, 0),
-		coord + int2(-1, 0),
-		coord + int2(0, 1),
-		coord + int2(0, -1)
+	int2 offsets[4] = {
+		int2(1, 0),
+		int2(-1, 0),
+		int2(0, 1),
+		int2(0, -1)
 	};
 
 	for(int i = 0; i < 4; ++i)
 	{
-		int2 neighbor = neighbors[i];
-		if(!InBounds(neighbor))
+		int2 neighbor = GetNeighbor(coord, offsets[i]);
+		if(!NeighborInBounds(neighbor))
 			continue;
 
 		int neighborIndex = ToIndex(neighbor);
@@ -319,17 +396,17 @@ void CSAccumulateChainStats(uint3 id : SV_DispatchThreadID)
 	InterlockedMax(_ChainOwnerBuffer[rootLabel], owner);
 	InterlockedAdd(_ChainPixelCountBuffer[rootLabel], 1);
 
-	int2 neighbors[4] = {
-		coord + int2(1, 0),
-		coord + int2(-1, 0),
-		coord + int2(0, 1),
-		coord + int2(0, -1)
+	int2 offsets4[4] = {
+		int2(1, 0),
+		int2(-1, 0),
+		int2(0, 1),
+		int2(0, -1)
 	};
 
 	for(int i = 0; i < 4; ++i)
 	{
-		int2 neighbor = neighbors[i];
-		if(!InBounds(neighbor))
+		int2 neighbor = GetNeighbor(coord, offsets4[i]);
+		if(!NeighborInBounds(neighbor))
 			continue;
 
 		int neighborIndex = ToIndex(neighbor);

@@ -102,9 +102,32 @@ public abstract class Board : MonoBehaviour
 	#region State management
 	public void SetState(BoardState newState)
 	{
+		if(newState == null)
+		{
+			Debug.LogWarning("Attempting to set null board state.", this);
+			return;
+		}
+
 		state = newState;
+		UpdateBoardScale();
 		UpdateGridMaterialParameters();
 		RefreshRendering();
+	}
+
+	/// <summary>
+	/// Update board anchor scale based on current size compared to initial size.
+	/// Override in subclasses to apply topology-specific scaling.
+	/// </summary>
+	protected virtual void UpdateBoardScale()
+	{
+		// Base implementation for square board
+		if(transform.parent == null)
+			return;
+
+		float size = Mathf.Max(1f, State.Size);
+		float initialSize = Mathf.Max(size, size + State.ShrinkMargin);
+		float scaleRatio = size / initialSize;
+		transform.parent.localScale = Vector3.one * scaleRatio;
 	}
 
 	public void RefreshRendering()
@@ -118,6 +141,8 @@ public abstract class Board : MonoBehaviour
 		if(renderState == null || caches == null || !caches.isInitialized)
 			return;
 
+		caches.topology = Topology;
+
 		Color[] colors = PlayerColors ?? new Color[] { Color.black, Color.white };
 		BoardUtility.RenderAnalysis(caches, renderState, colors);
 		if(material == null)
@@ -126,7 +151,8 @@ public abstract class Board : MonoBehaviour
 		if(material.HasProperty("_DistributionMap"))
 		{
 			material.SetTexture("_DistributionMap", caches.distributionMap);
-			material.SetFloat("_Threshold", renderState.Threshold);
+			if(material.HasProperty("_Topology"))
+				material.SetFloat("_Topology", (float)Topology);
 			int playerCount = colors.Length;
 			for(int player = 0; player < BoardUtility.MaxPlayers; ++player)
 			{
@@ -195,6 +221,13 @@ public abstract class Board : MonoBehaviour
 
 	protected virtual void UpdateGridMaterialParameters()
 	{
+		if(GridMaterial == null)
+			return;
+
+		if(GridMaterial.HasProperty("_Topology"))
+			GridMaterial.SetFloat("_Topology", (float)Topology);
+		if(GridMaterial.HasProperty("_GridDisplayMode"))
+			GridMaterial.SetFloat("_GridDisplayMode", 0f);
 	}
 	#endregion
 
@@ -219,6 +252,39 @@ public abstract class Board : MonoBehaviour
 	#endregion
 
 	#region Coordinate conversion
+	public virtual BoardUtility.BoardTopology Topology => BoardUtility.BoardTopology.Flat;
+
+	/// <summary>
+	/// Uniformly sample a legal absolute grid position on the board.
+	/// Override for non-square topologies.
+	/// </summary>
+	public virtual Vector2 SampleUniformAbsolutePosition()
+	{
+		float boardSize = Mathf.Max(1, Mathf.RoundToInt(State.Size));
+		float x = Random.Range(0, boardSize);
+		float y = Random.Range(0, boardSize);
+		return new Vector2(x, y);
+	}
+
+	/// <summary>
+	/// Distance from a point to board boundary in absolute-grid units.
+	/// Override for topologies without physical boundary.
+	/// </summary>
+	public virtual float ComputeDistanceToBoundary(Vector2 position)
+	{
+		float boardExtent = Mathf.Max(0f, State.BoardStateExtent);
+		return Mathf.Min(
+			Mathf.Min(position.x, boardExtent - position.x),
+			Mathf.Min(position.y, boardExtent - position.y));
+	}
+
+	/// <summary>
+	/// Attempt to shrink the board by producing a new cropped BoardState.
+	/// Returns new BoardState if successful, null if board is already at minimum size.
+	/// Caller should call SetState with result and EndMatch if null is returned.
+	/// </summary>
+	public abstract BoardState TryShrink(BoardState current, float deltaMargin);
+
 	public abstract Bounds GetWorldBounds();
 	public abstract Vector2 WorldToBoardLocalPosition(Vector3 worldPosition);
 	public abstract Vector3 BoardLocalToWorldPosition(Vector2 boardLocalPosition);

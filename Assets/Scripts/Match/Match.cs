@@ -2,12 +2,21 @@ using UnityEngine;
 using System;
 using System.Collections.Generic;
 
+public enum BoardShape
+{
+	Square,
+	Sphere,
+}
+
 [System.Serializable]
 public struct MatchRule
 {
 	public string modeId;
 	public int boardSize;
 	public float stoneHardness;
+	public BoardShape boardShape;
+	public bool useShrinking;
+	public float shrinkSpeed;
 }
 
 public struct PlayerInfo
@@ -36,6 +45,7 @@ public abstract class Match : MonoBehaviour
 	protected void Awake()
 	{
 		Current = this;
+		MatchInput.GetOrCreate(this);
 	}
 
 	protected void Start()
@@ -66,7 +76,7 @@ public abstract class Match : MonoBehaviour
 		remove => onStateChanged -= value;
 	}
 
-	protected bool LastPlacementSucceed { get; private set; } = false;
+	protected bool LastPlacementSucceed { get; set; } = false;
 
 	protected Action onEnd;
 	public event Action OnEnd
@@ -197,8 +207,11 @@ public abstract class Match : MonoBehaviour
 
 		if(position.x < 0 || position.x >= state.Size || position.y < 0 || position.y >= state.Size)
 		{
-			board.ClearPreview();
-			return false;
+			if(!(board.Caches.topology == BoardUtility.BoardTopology.Sphere && position.y >= 0 && position.y < state.Size))
+			{
+				board.ClearPreview();
+				return false;
+			}
 		}
 
 		BoardState previewState = new(state);
@@ -241,6 +254,17 @@ public abstract class Match : MonoBehaviour
 			int playerCount = Mathf.Max(1, PlayerCount);
 			currentPlayerIndex = ((value % playerCount) + playerCount) % playerCount;
 			onCurrentPlayerChanged?.Invoke(currentPlayerIndex);
+		}
+	}
+
+	public bool IsCurrentPlayerLocallyControllable
+	{
+		get
+		{
+			if(isEnded || players.Count == 0)
+				return false;
+			int safeIndex = Mathf.Clamp(CurrentPlayerIndex, 0, players.Count - 1);
+			return players[safeIndex].CanReceiveLocalInput;
 		}
 	}
 
@@ -377,6 +401,25 @@ public abstract class Match : MonoBehaviour
 		if(!isEnded)
 			StepPlayerIndex();
 
+		// Try shrinking the board if enabled
+		if(!isEnded && Rule.useShrinking)
+		{
+			Board board = Board.Current;
+			if(board != null)
+			{
+				BoardState shrunkState = board.TryShrink(board.State, Rule.shrinkSpeed);
+				if(shrunkState == null)
+				{
+					EndMatch();
+					if(ShouldBroadcastAuthorityResult())
+						BroadcastAuthorityResult(true, null, playerIndex, pendingAuthorityActionSeq);
+					pendingAuthorityActionSeq = 0;
+					return;
+				}
+				board.SetState(shrunkState);
+			}
+		}
+
 		if(ShouldBroadcastAuthorityResult())
 			BroadcastAuthorityResult(true, null, playerIndex, pendingAuthorityActionSeq);
 
@@ -395,7 +438,7 @@ public abstract class Match : MonoBehaviour
 		SetPlayerPassState(CurrentPlayerIndex, false);
 
 		int safeIndex = Mathf.Clamp(CurrentPlayerIndex, 0, players.Count - 1);
-		if(!players[safeIndex].CanReceiveLocalInput)
+		if(!IsCurrentPlayerLocallyControllable)
 			Board.Current?.ClearPreview();
 
 		BoardState state = Board.Current?.State;

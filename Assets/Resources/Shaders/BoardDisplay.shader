@@ -4,6 +4,7 @@ Shader "FluidWeiqi/BoardDisplay"
 	{
 		[Header(Inspector)]
 		[Space]
+		_MinAlpha ("Min Alpha", Range(0, 1)) = 0.5
 		_AlphaCurve ("Alpha Curve", Range(0, 1)) = 1
 		_PlayerColor0 ("Player Color 0", Color) = (0, 0, 0, 1)
 		_PlayerColor1 ("Player Color 1", Color) = (1, 1, 1, 1)
@@ -13,7 +14,7 @@ Shader "FluidWeiqi/BoardDisplay"
 		[Header(Runtime)]
 		[Space]
 		_DistributionMap ("Distribution Map", 2D) = "black" {}
-		_Threshold ("Threshold", Float) = 0.5
+		_Topology ("Topology", Float) = 0
 	}
 
 	SubShader
@@ -40,14 +41,16 @@ Shader "FluidWeiqi/BoardDisplay"
 			struct v2f
 			{
 				float2 uv : TEXCOORD0;
+				float3 localPos : TEXCOORD1;
 				float4 vertex : SV_POSITION;
 			};
 
 			TEXTURE2D(_DistributionMap);
 			SAMPLER(sampler_DistributionMap);
 			float4 _DistributionMap_TexelSize;
-			float _Threshold;
+			float _MinAlpha;
 			float _AlphaCurve;
+			float _Topology;
 			float4 _PlayerColor0;
 			float4 _PlayerColor1;
 			float4 _PlayerColor2;
@@ -58,6 +61,7 @@ Shader "FluidWeiqi/BoardDisplay"
 				v2f output;
 				output.vertex = TransformObjectToHClip(vertexInput.vertex.xyz);
 				output.uv = vertexInput.uv;
+				output.localPos = vertexInput.vertex.xyz;
 				return output;
 			}
 
@@ -77,6 +81,16 @@ Shader "FluidWeiqi/BoardDisplay"
 				return SAMPLE_TEXTURE2D(_DistributionMap, sampler_DistributionMap, uv);
 			}
 
+			float2 ComputeSphereUv(float3 localPos)
+			{
+				float3 dir = normalize(localPos);
+				float phi = atan2(dir.x, dir.z);     // (-PI, PI]
+				float theta = asin(clamp(dir.y, -1, 1)); // [-PI/2, PI/2]
+				float u = frac(phi / (2.0 * PI) + 0.5);
+				float v = saturate(theta / PI + 0.5);
+				return float2(u, v);
+			}
+
 			int FindBestPlayer(float4 density)
 			{
 				int best = 0;
@@ -89,14 +103,19 @@ Shader "FluidWeiqi/BoardDisplay"
 
 			float AlphaFromDensity(float totalDensity)
 			{
-				float a = totalDensity < _Threshold ? 0 : totalDensity;
-				float exponent = max(_AlphaCurve, 1e-4);
-				return pow(a, exponent);
+				float t = totalDensity - 1;
+				if(t < 0)
+					return 0;
+				t = step(0, t) * t;
+				t = exp(t);
+				t = (t - 1) / (t + 1);
+				return lerp(_MinAlpha, 1, pow(t, _AlphaCurve));
 			}
 
 			float4 frag(v2f input) : SV_Target
 			{
-				float4 density = SampleDensity(input.uv);
+				float2 sampleUv = _Topology >= 0.5 ? ComputeSphereUv(input.localPos) : input.uv;
+				float4 density = SampleDensity(sampleUv);
 				float totalDensity = density.x + density.y + density.z + density.w;
 				int bestPlayer = FindBestPlayer(density);
 				float alpha = AlphaFromDensity(totalDensity);

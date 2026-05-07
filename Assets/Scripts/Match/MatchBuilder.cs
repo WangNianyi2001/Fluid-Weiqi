@@ -19,13 +19,16 @@ public class MatchBuilder : MonoBehaviour
 			throw new System.NotSupportedException($"Cannot build match, mode config not found: {rule.modeId}");
 
 		List<PlayerInfo> playerInfos = BuildPlayerInfos();
+		GameObject matchSkinPrefab = rule.boardShape == BoardShape.Sphere
+			? GameManager.Instance.DefaultSphericalMatchSkinPrefab ?? GameManager.Instance.DefaultMatchSkinPrefab
+			: GameManager.Instance.DefaultMatchSkinPrefab;
 		MatchBuildContext context = new MatchBuildContext()
 		{
 			Rule = rule,
 			PlayerInfos = playerInfos,
 			UiRoot = uiRoot,
 			MatchRoot = transform,
-			MatchSkinPrefab = GameManager.Instance.DefaultMatchSkinPrefab,
+			MatchSkinPrefab = matchSkinPrefab,
 		};
 
 		modeConfig.BuildMatch(context);

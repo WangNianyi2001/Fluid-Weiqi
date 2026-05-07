@@ -43,6 +43,11 @@ public class LobbyUi : MonoBehaviour
 		matchModeDropdown.onValueChanged.AddListener(OnMatchModeDropdownValueChanged);
 		boardSizeSlider.onValueChanged.AddListener(OnBoardSizeSliderValueChanged);
 		stoneHardnessSlider.onValueChanged.AddListener(OnStoneHardnessSliderValueChanged);
+		SetBoardShapeOptions(allBoardShapeOptions);
+		boardShapeDropdown.interactable = Lobby.Current.IsHost;
+		boardShapeDropdown.onValueChanged.AddListener(OnBoardShapeDropdownValueChanged);
+		shrinkingToggle.onValueChanged.AddListener(OnShrinkingToggleValueChanged);
+		shrinkSpeedSlider.onValueChanged.AddListener(OnShrinkSpeedSliderValueChanged);
 		Lobby.Current.OnMatchRuleChanged += OnMatchRuleChanged;
 		RefreshMatchRuleArea();
 
@@ -180,8 +185,20 @@ public class LobbyUi : MonoBehaviour
 	[SerializeField] Slider boardSizeSlider;
 	[SerializeField] Text stoneHardnessText;
 	[SerializeField] Slider stoneHardnessSlider;
+	[SerializeField] Dropdown boardShapeDropdown;
+	[SerializeField] Toggle shrinkingToggle;
+	[SerializeField] GameObject shrinkSpeedRow;
+	[SerializeField] Text shrinkSpeedText;
+	[SerializeField] Slider shrinkSpeedSlider;
 
 	readonly List<MatchModeConfig> matchModeOptions = new();
+
+	static readonly BoardShape[] allBoardShapeOptions = new BoardShape[]
+	{
+		BoardShape.Square,
+		BoardShape.Sphere,
+	};
+	readonly List<BoardShape> boardShapeOptions = new();
 	void SetMatchModeOptions(IReadOnlyList<MatchModeConfig> options)
 	{
 		matchModeOptions.Clear();
@@ -229,6 +246,38 @@ public class LobbyUi : MonoBehaviour
 		HostLobby.Current?.SetMatchRule(rule);
 	}
 
+	void SetBoardShapeOptions(IList<BoardShape> value)
+	{
+		boardShapeOptions.Clear();
+		boardShapeOptions.AddRange(value);
+		boardShapeDropdown.options = boardShapeOptions
+			.Select(s => new Dropdown.OptionData(s.ToLocalizedString()))
+			.ToList();
+	}
+
+	void OnBoardShapeDropdownValueChanged(int index)
+	{
+		if(!boardShapeOptions.IsValidIndex(index))
+			return;
+		var rule = Lobby.Current.MatchRule;
+		rule.boardShape = boardShapeOptions[index];
+		HostLobby.Current?.SetMatchRule(rule);
+	}
+
+	void OnShrinkingToggleValueChanged(bool value)
+	{
+		var rule = Lobby.Current.MatchRule;
+		rule.useShrinking = value;
+		HostLobby.Current?.SetMatchRule(rule);
+	}
+
+	void OnShrinkSpeedSliderValueChanged(float value)
+	{
+		var rule = Lobby.Current.MatchRule;
+		rule.shrinkSpeed = value;
+		HostLobby.Current?.SetMatchRule(rule);
+	}
+
 	void OnMatchRuleChanged()
 	{
 		RefreshMatchRuleArea();
@@ -240,8 +289,15 @@ public class LobbyUi : MonoBehaviour
 		var rule = Lobby.Current.MatchRule;
 		boardSizeText.text = rule.boardSize.ToString();
 		boardSizeSlider.value = rule.boardSize;
-		stoneHardnessText.text = rule.stoneHardness.ToString("F1");
+		stoneHardnessText.text = rule.stoneHardness.ToString("F2");
 		stoneHardnessSlider.value = rule.stoneHardness;
+		int shapeIndex = boardShapeOptions.IndexOf(rule.boardShape);
+		if(shapeIndex >= 0)
+			boardShapeDropdown.value = shapeIndex;
+		shrinkingToggle.isOn = rule.useShrinking;
+		shrinkSpeedRow.gameObject.SetActive(rule.useShrinking);
+		shrinkSpeedText.text = rule.shrinkSpeed.ToString("F2");
+		shrinkSpeedSlider.value = rule.shrinkSpeed;
 	}
 	#endregion
 
