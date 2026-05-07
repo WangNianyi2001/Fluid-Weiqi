@@ -237,9 +237,9 @@ public abstract class Board : MonoBehaviour
 	/// </summary>
 	public virtual Vector2 SampleUniformAbsolutePosition()
 	{
-		int boardSize = Mathf.Max(1, Mathf.RoundToInt(State.Size));
-		int x = Random.Range(0, boardSize);
-		int y = Random.Range(0, boardSize);
+		float boardSize = Mathf.Max(1, Mathf.RoundToInt(State.Size));
+		float x = Random.Range(0, boardSize);
+		float y = Random.Range(0, boardSize);
 		return new Vector2(x, y);
 	}
 
