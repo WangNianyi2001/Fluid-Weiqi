@@ -25,12 +25,14 @@ public class GameSettings : ScriptableObject
 
 	[SerializeField] string defaultMatchModeId;
 	[SerializeField] GameObject defaultMatchSkinPrefab;
+	[SerializeField] GameObject defaultSphericalMatchSkinPrefab;
 	[SerializeField] List<MatchModeConfig> legacyMatchModes = new();
 	[SerializeField] List<AiConfig> legacyAis = new();
 	[SerializeField] List<PlayerColorOption> availablePlayerColors = new();
 
 	public string DefaultMatchModeId => defaultMatchModeId;
 	public GameObject DefaultMatchSkinPrefab => defaultMatchSkinPrefab;
+	public GameObject DefaultSphericalMatchSkinPrefab => defaultSphericalMatchSkinPrefab;
 	public IReadOnlyList<MatchModeConfig> LegacyMatchModes => legacyMatchModes;
 	public IReadOnlyList<AiConfig> LegacyAis => legacyAis;
 	public IReadOnlyList<PlayerColorOption> AvailablePlayerColors => availablePlayerColors;

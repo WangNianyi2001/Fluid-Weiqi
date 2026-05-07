@@ -2,12 +2,19 @@ using UnityEngine;
 using System;
 using System.Collections.Generic;
 
+public enum BoardShape
+{
+	Square,
+	Sphere,
+}
+
 [System.Serializable]
 public struct MatchRule
 {
 	public string modeId;
 	public int boardSize;
 	public float stoneHardness;
+	public BoardShape boardShape;
 }
 
 public struct PlayerInfo
@@ -197,8 +204,11 @@ public abstract class Match : MonoBehaviour
 
 		if(position.x < 0 || position.x >= state.Size || position.y < 0 || position.y >= state.Size)
 		{
-			board.ClearPreview();
-			return false;
+			if(!(board.Caches.topology == BoardUtility.BoardTopology.Sphere && position.y >= 0 && position.y < state.Size))
+			{
+				board.ClearPreview();
+				return false;
+			}
 		}
 
 		BoardState previewState = new(state);

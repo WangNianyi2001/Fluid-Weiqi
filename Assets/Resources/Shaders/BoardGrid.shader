@@ -10,6 +10,9 @@ Shader "FluidWeiqi/BoardGrid"
 		_StarPointSoftness ("Star Point Softness", Range(0.002, 0.2)) = 0.03
 		_AlphaCutout ("Alpha Cutout", Range(0, 1)) = 0.01
 		_StarEdgeOffset ("Star Edge Offset", Float) = 3
+		_Topology ("Topology", Float) = 0
+		_ShowStarPoints ("Show Star Points", Float) = 1
+		_ShowGridLines ("Show Grid Lines", Float) = 1
 	}
 
 	SubShader
@@ -37,6 +40,7 @@ Shader "FluidWeiqi/BoardGrid"
 			{
 				float4 vertex : SV_POSITION;
 				float2 uv : TEXCOORD0;
+				float3 localPos : TEXCOORD1;
 			};
 
 			float4 _GridColor;
@@ -47,13 +51,27 @@ Shader "FluidWeiqi/BoardGrid"
 			float _StarPointSoftness;
 			float _AlphaCutout;
 			float _StarEdgeOffset;
+			float _Topology;
+			float _ShowStarPoints;
+			float _ShowGridLines;
 
 			v2f vert(appdata vertexInput)
 			{
 				v2f output;
 				output.vertex = TransformObjectToHClip(vertexInput.vertex.xyz);
 				output.uv = vertexInput.uv;
+				output.localPos = vertexInput.vertex.xyz;
 				return output;
+			}
+
+			float2 ComputeSphereUv(float3 localPos)
+			{
+				float3 dir = normalize(localPos);
+				float phi = atan2(dir.x, dir.z);               // (-PI, PI]
+				float theta = asin(clamp(dir.y, -1.0, 1.0));  // [-PI/2, PI/2]
+				float u = frac(phi / (2.0 * PI) + 0.5);
+				float v = saturate(theta / PI + 0.5);
+				return float2(u, v);
 			}
 
 			float GetAxisLineAlpha(float uvCoord, float lineCount, float lineThickness, float edgeMultiplier)
@@ -118,11 +136,12 @@ Shader "FluidWeiqi/BoardGrid"
 
 			float4 frag(v2f input) : SV_Target
 			{
+				float2 uv = _Topology >= 0.5 ? ComputeSphereUv(input.localPos) : input.uv;
 				float boardSize = max(2.0, floor(_BoardSize + 0.5));
-				float lineX = GetAxisLineAlpha(input.uv.x, boardSize, _LineThickness, _EdgeLineMultiplier);
-				float lineY = GetAxisLineAlpha(input.uv.y, boardSize, _LineThickness, _EdgeLineMultiplier);
-				float gridAlpha = max(lineX, lineY);
-				float starAlpha = GetStarAlpha(input.uv, boardSize, _StarEdgeOffset, _StarPointRadius, _StarPointSoftness);
+				float lineX = GetAxisLineAlpha(uv.x, boardSize, _LineThickness, _EdgeLineMultiplier);
+				float lineY = GetAxisLineAlpha(uv.y, boardSize, _LineThickness, _EdgeLineMultiplier);
+				float gridAlpha = max(lineX, lineY) * step(0.5, _ShowGridLines);
+				float starAlpha = GetStarAlpha(uv, boardSize, _StarEdgeOffset, _StarPointRadius, _StarPointSoftness) * step(0.5, _ShowStarPoints);
 				float alpha = max(gridAlpha, starAlpha) * _GridColor.a;
 
 				clip(alpha - _AlphaCutout);

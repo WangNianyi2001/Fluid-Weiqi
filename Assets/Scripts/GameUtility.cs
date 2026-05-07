@@ -33,6 +33,16 @@ public static class GameUtility
 		};
 	}
 
+	public static string ToLocalizedString(this BoardShape value)
+	{
+		return value switch
+		{
+			BoardShape.Square => "正方形",
+			BoardShape.Sphere => "球形",
+			_ => null,
+		};
+	}
+
 	public static bool IsValidIndex(this IList list, int i)
 	{
 		return i >= 0 && i < list.Count;

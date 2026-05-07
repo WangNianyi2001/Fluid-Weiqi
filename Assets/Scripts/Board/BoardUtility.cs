@@ -6,6 +6,12 @@ public static class BoardUtility
 {
 	#region Types
 
+	public enum BoardTopology
+	{
+		Flat,
+		Sphere,
+	}
+
 	[StructLayout(LayoutKind.Sequential)]
 	public struct ChainStat
 	{
@@ -54,6 +60,8 @@ public static class BoardUtility
 		public bool ownerDataCacheValid;
 		public bool labelDataCacheValid;
 
+		public BoardTopology topology;
+
 		public bool isInitialized;
 	}
 
@@ -62,11 +70,12 @@ public static class BoardUtility
 	#region Constants
 
 	public const int MaxPlayers = 4;
-	public const int ComputeTextureSize = 128;
 
 	const string DistributionShaderResourcePath = "Shaders/BoardDistribution";
-	const int MaxCclIterations = ComputeTextureSize * ComputeTextureSize;
 	const int ThreadGroupSize = 8;
+	const int ComputePixelsPerLine = 16;
+	const int MinComputeTextureSize = 128;
+	const int MaxComputeTextureSize = 1024;
 	const float AreaEpsilon = 1e-6f;
 
 	#endregion
@@ -88,10 +97,6 @@ public static class BoardUtility
 		c.clearChainStatsKernel = c.distributionShader.FindKernel("CSClearChainStats");
 		c.accumulateChainStatsKernel = c.distributionShader.FindKernel("CSAccumulateChainStats");
 		c.compactChainStatsKernel = c.distributionShader.FindKernel("CSCompactChainStats");
-
-		c.distributionMap = CreateRenderTexture(CreateDistributionMapDescriptor());
-		c.territoryMap = CreateRenderTexture(CreateTerritoryMapDescriptor());
-		AllocateConnectivityBuffers(c);
 		c.isInitialized = true;
 	}
 
@@ -100,18 +105,7 @@ public static class BoardUtility
 		if(!c.isInitialized)
 			return;
 
-		ReleaseRenderTexture(ref c.distributionMap);
-		ReleaseRenderTexture(ref c.territoryMap);
-		ReleaseBuffer(ref c.ownerBuffer);
-		ReleaseBuffer(ref c.areaPixelCountBuffer);
-		ReleaseBuffer(ref c.labelBufferA);
-		ReleaseBuffer(ref c.labelBufferB);
-		ReleaseBuffer(ref c.cclChangedBuffer);
-		ReleaseBuffer(ref c.chainOwnerBuffer);
-		ReleaseBuffer(ref c.chainPixelCountBuffer);
-		ReleaseBuffer(ref c.chainLibertyBuffer);
-		ReleaseBuffer(ref c.compactChainStatBuffer);
-		ReleaseBuffer(ref c.compactChainStatCountBuffer);
+		ReleaseComputeResources(c);
 		c.activeLabelBuffer = null;
 		c.ownerDataCache = null;
 		c.labelDataCache = null;
@@ -126,7 +120,11 @@ public static class BoardUtility
 
 	public static void RenderAnalysis(BoardCaches c, BoardState state, IReadOnlyList<Color> playerColors)
 	{
-		if(!c.isInitialized || state == null || c.distributionMap == null || c.territoryMap == null)
+		if(!c.isInitialized || state == null)
+			return;
+
+		EnsureComputeResources(c, state);
+		if(c.distributionMap == null || c.territoryMap == null)
 			return;
 
 		RenderDistributionMap(c, state);
@@ -139,7 +137,11 @@ public static class BoardUtility
 	public static float[] GetPlayerAreasByDominance(Board b, int playerCount)
 	{
 		var c = b.Caches;
-		float scale = Mathf.Pow(b.State.Size, 2) / Mathf.Pow(ComputeTextureSize, 2);
+		if(c.distributionMap == null)
+			return new float[playerCount];
+
+		float pixelCount = c.distributionMap.width * c.distributionMap.height;
+		float scale = Mathf.Pow(b.State.Size, 2) / Mathf.Max(1f, pixelCount);
 
 		float[] areaByPlayer = new float[playerCount];
 		if(!c.isInitialized || c.areaPixelCountBuffer == null)
@@ -155,12 +157,15 @@ public static class BoardUtility
 	public static List<ChainStat> GetChainStats(BoardCaches c)
 	{
 		List<ChainStat> chainStats = new();
-		if(!c.isInitialized || c.activeLabelBuffer == null)
+		if(!c.isInitialized || c.activeLabelBuffer == null || c.distributionMap == null)
 			return chainStats;
 
+		int textureWidth = c.distributionMap.width;
+		int textureHeight = c.distributionMap.height;
+
 		c.compactChainStatBuffer.SetCounterValue(0);
-		c.distributionShader.SetInt("_TextureWidth", ComputeTextureSize);
-		c.distributionShader.SetInt("_TextureHeight", ComputeTextureSize);
+		c.distributionShader.SetInt("_TextureWidth", textureWidth);
+		c.distributionShader.SetInt("_TextureHeight", textureHeight);
 		c.distributionShader.SetBuffer(c.compactChainStatsKernel, "_OwnerBuffer", c.ownerBuffer);
 		c.distributionShader.SetBuffer(c.compactChainStatsKernel, "_LabelBufferRead", c.activeLabelBuffer);
 		c.distributionShader.SetBuffer(c.compactChainStatsKernel, "_ChainOwnerBuffer", c.chainOwnerBuffer);
@@ -168,8 +173,8 @@ public static class BoardUtility
 		c.distributionShader.SetBuffer(c.compactChainStatsKernel, "_ChainHasLibertyBuffer", c.chainLibertyBuffer);
 		c.distributionShader.SetBuffer(c.compactChainStatsKernel, "_CompactChainStatBuffer", c.compactChainStatBuffer);
 
-		int groupsX = Mathf.CeilToInt(ComputeTextureSize / (float)ThreadGroupSize);
-		int groupsY = Mathf.CeilToInt(ComputeTextureSize / (float)ThreadGroupSize);
+		int groupsX = Mathf.CeilToInt(textureWidth / (float)ThreadGroupSize);
+		int groupsY = Mathf.CeilToInt(textureHeight / (float)ThreadGroupSize);
 		c.distributionShader.Dispatch(c.compactChainStatsKernel, groupsX, groupsY, 1);
 
 		ComputeBuffer.CopyCount(c.compactChainStatBuffer, c.compactChainStatCountBuffer, 0);
@@ -192,7 +197,7 @@ public static class BoardUtility
 		if(!TryEnsureLabelDataCache(c))
 			return -1;
 
-		int pixelIndex = AbsolutePositionToPixelIndex(renderState, absolutePosition);
+		int pixelIndex = AbsolutePositionToPixelIndex(c, renderState, absolutePosition);
 		if(pixelIndex < 0)
 			return -1;
 
@@ -206,7 +211,7 @@ public static class BoardUtility
 		if(!TryEnsureOwnerDataCache(c))
 			return false;
 
-		int pixelIndex = AbsolutePositionToPixelIndex(renderState, absolutePosition);
+		int pixelIndex = AbsolutePositionToPixelIndex(c, renderState, absolutePosition);
 		if(pixelIndex < 0)
 			return false;
 
@@ -257,7 +262,18 @@ public static class BoardUtility
 		newState = null;
 		if(player < 0 || player >= state.PlayerCount) return false;
 		if(strength <= 0) return false;
-		if(position.x < 0 || position.x >= state.Size || position.y < 0 || position.y >= state.Size) return false;
+
+		// Topology-aware bounds / wrap
+		if(c.topology == BoardTopology.Sphere)
+		{
+			if(position.y < 0 || position.y >= state.Size) return false;
+			position = new Vector2(Mathf.Repeat(position.x, 2f * state.Size), position.y);
+		}
+		else
+		{
+			if(position.x < 0 || position.x >= state.Size || position.y < 0 || position.y >= state.Size) return false;
+		}
+
 		if(IsOccupiedAtAbsolutePosition(c, state, position)) return false;
 
 		BoardState previewState = new(state);
@@ -337,6 +353,7 @@ public static class BoardUtility
 		ComputeBuffer[] stoneBuffers = new ComputeBuffer[MaxPlayers];
 		try
 		{
+			c.distributionShader.SetInt("_Topology", (int)c.topology);
 			c.distributionShader.SetTexture(c.distributionKernel, "_DistributionOutput", c.distributionMap);
 			c.distributionShader.SetFloat("_BoardSize", state.Size - 1);
 			c.distributionShader.SetFloat("_StoneHardness", Mathf.Clamp(state.StoneHardness, 0f, 0.9999f));
@@ -401,8 +418,11 @@ public static class BoardUtility
 
 	static void RunDominantAreaStats(BoardCaches c, BoardState state)
 	{
-		c.distributionShader.SetInt("_TextureWidth", ComputeTextureSize);
-		c.distributionShader.SetInt("_TextureHeight", ComputeTextureSize);
+		int textureWidth = c.distributionMap.width;
+		int textureHeight = c.distributionMap.height;
+
+		c.distributionShader.SetInt("_TextureWidth", textureWidth);
+		c.distributionShader.SetInt("_TextureHeight", textureHeight);
 		c.distributionShader.SetInt("_PlayerCount", state.PlayerCount);
 		c.distributionShader.SetFloat("_AreaEpsilon", AreaEpsilon);
 		c.distributionShader.SetBuffer(c.clearAreaPixelCountsKernel, "_AreaPixelCountBuffer", c.areaPixelCountBuffer);
@@ -410,28 +430,31 @@ public static class BoardUtility
 
 		c.distributionShader.SetTexture(c.accumulateAreaPixelCountsKernel, "_DistributionInput", c.distributionMap);
 		c.distributionShader.SetBuffer(c.accumulateAreaPixelCountsKernel, "_AreaPixelCountBuffer", c.areaPixelCountBuffer);
-		int groupsX = Mathf.CeilToInt(ComputeTextureSize / (float)ThreadGroupSize);
-		int groupsY = Mathf.CeilToInt(ComputeTextureSize / (float)ThreadGroupSize);
+		int groupsX = Mathf.CeilToInt(textureWidth / (float)ThreadGroupSize);
+		int groupsY = Mathf.CeilToInt(textureHeight / (float)ThreadGroupSize);
 		c.distributionShader.Dispatch(c.accumulateAreaPixelCountsKernel, groupsX, groupsY, 1);
 	}
 
 	static void RunConnectedComponents(BoardCaches c)
 	{
 		c.labelDataCacheValid = false;
+		int textureWidth = c.distributionMap.width;
+		int textureHeight = c.distributionMap.height;
+		int maxCclIterations = textureWidth * textureHeight;
 
-		c.distributionShader.SetInt("_TextureWidth", ComputeTextureSize);
-		c.distributionShader.SetInt("_TextureHeight", ComputeTextureSize);
+		c.distributionShader.SetInt("_TextureWidth", textureWidth);
+		c.distributionShader.SetInt("_TextureHeight", textureHeight);
 		c.distributionShader.SetBuffer(c.cclInitKernel, "_OwnerBuffer", c.ownerBuffer);
 		c.distributionShader.SetBuffer(c.cclInitKernel, "_LabelBufferWrite", c.labelBufferA);
 
-		int groupsX = Mathf.CeilToInt(ComputeTextureSize / (float)ThreadGroupSize);
-		int groupsY = Mathf.CeilToInt(ComputeTextureSize / (float)ThreadGroupSize);
+		int groupsX = Mathf.CeilToInt(textureWidth / (float)ThreadGroupSize);
+		int groupsY = Mathf.CeilToInt(textureHeight / (float)ThreadGroupSize);
 		c.distributionShader.Dispatch(c.cclInitKernel, groupsX, groupsY, 1);
 
 		ComputeBuffer readBuffer = c.labelBufferA;
 		ComputeBuffer writeBuffer = c.labelBufferB;
 		int[] changed = new int[1];
-		for(int i = 0; i < MaxCclIterations; ++i)
+		for(int i = 0; i < maxCclIterations; ++i)
 		{
 			changed[0] = 0;
 			c.cclChangedBuffer.SetData(changed);
@@ -456,12 +479,14 @@ public static class BoardUtility
 	{
 		if(c.activeLabelBuffer == null)
 			return;
+		int textureWidth = c.distributionMap.width;
+		int textureHeight = c.distributionMap.height;
 
-		c.distributionShader.SetInt("_TextureWidth", ComputeTextureSize);
-		c.distributionShader.SetInt("_TextureHeight", ComputeTextureSize);
+		c.distributionShader.SetInt("_TextureWidth", textureWidth);
+		c.distributionShader.SetInt("_TextureHeight", textureHeight);
 
-		int groupsX = Mathf.CeilToInt(ComputeTextureSize / (float)ThreadGroupSize);
-		int groupsY = Mathf.CeilToInt(ComputeTextureSize / (float)ThreadGroupSize);
+		int groupsX = Mathf.CeilToInt(textureWidth / (float)ThreadGroupSize);
+		int groupsY = Mathf.CeilToInt(textureHeight / (float)ThreadGroupSize);
 
 		c.distributionShader.SetBuffer(c.clearChainStatsKernel, "_ChainOwnerBuffer", c.chainOwnerBuffer);
 		c.distributionShader.SetBuffer(c.clearChainStatsKernel, "_ChainPixelCountBuffer", c.chainPixelCountBuffer);
@@ -476,27 +501,45 @@ public static class BoardUtility
 		c.distributionShader.Dispatch(c.accumulateChainStatsKernel, groupsX, groupsY, 1);
 	}
 
-	static int AbsolutePositionToPixelIndex(BoardState renderState, Vector2 absolutePosition)
+	static int AbsolutePositionToPixelIndex(BoardCaches c, BoardState renderState, Vector2 absolutePosition)
 	{
-		float span = renderState.BoardStateExtent;
-		if(absolutePosition.x < 0 || absolutePosition.x > span)
-			return -1;
-		if(absolutePosition.y < 0 || absolutePosition.y > span)
+		if(c.distributionMap == null)
 			return -1;
 
-		float normalizedX = Mathf.Clamp01(absolutePosition.x / span);
-		float normalizedY = Mathf.Clamp01(absolutePosition.y / span);
-		int pixelX = Mathf.Clamp((int)(normalizedX * ComputeTextureSize), 0, ComputeTextureSize - 1);
-		int pixelY = Mathf.Clamp((int)(normalizedY * ComputeTextureSize), 0, ComputeTextureSize - 1);
-		return pixelY * ComputeTextureSize + pixelX;
+		int textureWidth  = c.distributionMap.width;
+		int textureHeight = c.distributionMap.height;
+		float normalizedX, normalizedY;
+
+		if(c.topology == BoardTopology.Sphere)
+		{
+			float N = renderState.Size;
+			if(absolutePosition.y < 0 || absolutePosition.y >= N)
+				return -1;
+			normalizedX = Mathf.Repeat(absolutePosition.x, 2f * N) / (2f * N);
+			normalizedY = absolutePosition.y / N;
+		}
+		else
+		{
+			float span = renderState.BoardStateExtent;
+			if(absolutePosition.x < 0 || absolutePosition.x > span)
+				return -1;
+			if(absolutePosition.y < 0 || absolutePosition.y > span)
+				return -1;
+			normalizedX = Mathf.Clamp01(absolutePosition.x / span);
+			normalizedY = Mathf.Clamp01(absolutePosition.y / span);
+		}
+
+		int pixelX = Mathf.Clamp((int)(normalizedX * textureWidth),  0, textureWidth  - 1);
+		int pixelY = Mathf.Clamp((int)(normalizedY * textureHeight), 0, textureHeight - 1);
+		return pixelY * textureWidth + pixelX;
 	}
 
 	static bool TryEnsureOwnerDataCache(BoardCaches c)
 	{
-		if(!c.isInitialized || c.ownerBuffer == null)
+		if(!c.isInitialized || c.ownerBuffer == null || c.distributionMap == null)
 			return false;
 
-		int pixelCount = ComputeTextureSize * ComputeTextureSize;
+		int pixelCount = c.distributionMap.width * c.distributionMap.height;
 		if(c.ownerDataCache == null || c.ownerDataCache.Length != pixelCount)
 			c.ownerDataCache = new int[pixelCount];
 
@@ -511,10 +554,10 @@ public static class BoardUtility
 
 	static bool TryEnsureLabelDataCache(BoardCaches c)
 	{
-		if(!c.isInitialized || c.activeLabelBuffer == null)
+		if(!c.isInitialized || c.activeLabelBuffer == null || c.distributionMap == null)
 			return false;
 
-		int pixelCount = ComputeTextureSize * ComputeTextureSize;
+		int pixelCount = c.distributionMap.width * c.distributionMap.height;
 		if(c.labelDataCache == null || c.labelDataCache.Length != pixelCount)
 			c.labelDataCache = new int[pixelCount];
 
@@ -527,9 +570,52 @@ public static class BoardUtility
 		return true;
 	}
 
-	static void AllocateConnectivityBuffers(BoardCaches c)
+	static void EnsureComputeResources(BoardCaches c, BoardState state)
 	{
-		int pixelCount = ComputeTextureSize * ComputeTextureSize;
+		int targetTextureSize = CalculateComputeTextureSize(state);
+
+		if(c.distributionMap != null && c.territoryMap != null && c.distributionMap.width == targetTextureSize && c.distributionMap.height == targetTextureSize)
+			return;
+
+		ReleaseComputeResources(c);
+
+		c.distributionMap = CreateRenderTexture(CreateDistributionMapDescriptor(targetTextureSize));
+		c.territoryMap = CreateRenderTexture(CreateTerritoryMapDescriptor(targetTextureSize));
+		AllocateConnectivityBuffers(c, targetTextureSize);
+
+		c.ownerDataCache = null;
+		c.labelDataCache = null;
+		c.ownerDataCacheValid = false;
+		c.labelDataCacheValid = false;
+	}
+
+	static int CalculateComputeTextureSize(BoardState state)
+	{
+		int target = Mathf.CeilToInt(Mathf.Max(1f, state.Size) * ComputePixelsPerLine);
+		target = Mathf.Clamp(target, MinComputeTextureSize, MaxComputeTextureSize);
+		return Mathf.CeilToInt(target / (float)ThreadGroupSize) * ThreadGroupSize;
+	}
+
+	static void ReleaseComputeResources(BoardCaches c)
+	{
+		ReleaseRenderTexture(ref c.distributionMap);
+		ReleaseRenderTexture(ref c.territoryMap);
+		ReleaseBuffer(ref c.ownerBuffer);
+		ReleaseBuffer(ref c.areaPixelCountBuffer);
+		ReleaseBuffer(ref c.labelBufferA);
+		ReleaseBuffer(ref c.labelBufferB);
+		ReleaseBuffer(ref c.cclChangedBuffer);
+		ReleaseBuffer(ref c.chainOwnerBuffer);
+		ReleaseBuffer(ref c.chainPixelCountBuffer);
+		ReleaseBuffer(ref c.chainLibertyBuffer);
+		ReleaseBuffer(ref c.compactChainStatBuffer);
+		ReleaseBuffer(ref c.compactChainStatCountBuffer);
+		c.activeLabelBuffer = null;
+	}
+
+	static void AllocateConnectivityBuffers(BoardCaches c, int textureSize)
+	{
+		int pixelCount = textureSize * textureSize;
 		c.ownerBuffer = new ComputeBuffer(pixelCount, sizeof(int));
 		c.areaPixelCountBuffer = new ComputeBuffer(MaxPlayers, sizeof(int));
 		c.labelBufferA = new ComputeBuffer(pixelCount, sizeof(int));
@@ -542,9 +628,9 @@ public static class BoardUtility
 		c.compactChainStatCountBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
 	}
 
-	static RenderTextureDescriptor CreateDistributionMapDescriptor()
+	static RenderTextureDescriptor CreateDistributionMapDescriptor(int textureSize)
 	{
-		return new RenderTextureDescriptor(ComputeTextureSize, ComputeTextureSize, RenderTextureFormat.ARGBFloat, 0)
+		return new RenderTextureDescriptor(textureSize, textureSize, RenderTextureFormat.ARGBFloat, 0)
 		{
 			enableRandomWrite = true,
 			sRGB = false,
@@ -554,9 +640,9 @@ public static class BoardUtility
 		};
 	}
 
-	static RenderTextureDescriptor CreateTerritoryMapDescriptor()
+	static RenderTextureDescriptor CreateTerritoryMapDescriptor(int textureSize)
 	{
-		return new RenderTextureDescriptor(ComputeTextureSize, ComputeTextureSize, RenderTextureFormat.ARGB32, 0)
+		return new RenderTextureDescriptor(textureSize, textureSize, RenderTextureFormat.ARGB32, 0)
 		{
 			enableRandomWrite = true,
 			sRGB = QualitySettings.activeColorSpace == ColorSpace.Linear,

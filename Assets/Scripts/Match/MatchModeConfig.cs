@@ -4,7 +4,8 @@ using System.Linq;
 
 public abstract class MatchModeConfig : ScriptableObject
 {
-	const string StandardBoardPrefabResourcePath = "Prefabs/Boards/Standard";
+	const string SquareBoardPrefabResourcePath = "Prefabs/Boards/Square";
+	const string SphericalBoardPrefabResourcePath = "Prefabs/Boards/Spherical";
 
 	[SerializeField] string modeId;
 	[SerializeField] string displayName;
@@ -42,11 +43,14 @@ public abstract class MatchModeConfig : ScriptableObject
 		RenderSettings.skybox = skin.Skybox;
 		DynamicGI.UpdateEnvironment();
 
-		GameObject standardBoardPrefab = Resources.Load<GameObject>(StandardBoardPrefabResourcePath);
-		if(standardBoardPrefab == null)
-			throw new MissingReferenceException($"Standard board prefab not found at Resources/{StandardBoardPrefabResourcePath}.");
+		string boardPrefabPath = context.Rule.boardShape == BoardShape.Sphere
+			? SphericalBoardPrefabResourcePath
+			: SquareBoardPrefabResourcePath;
+		GameObject boardPrefab = Resources.Load<GameObject>(boardPrefabPath);
+		if(boardPrefab == null)
+			throw new MissingReferenceException($"Board prefab not found at Resources/{boardPrefabPath}.");
 
-		GameObject boardGo = Instantiate(standardBoardPrefab, skin.BoardRoot);
+		GameObject boardGo = Instantiate(boardPrefab, skin.BoardRoot);
 		Board board = boardGo.GetComponent<Board>();
 		if(board == null)
 			throw new MissingReferenceException($"Standard board prefab does not contain a Board component.");

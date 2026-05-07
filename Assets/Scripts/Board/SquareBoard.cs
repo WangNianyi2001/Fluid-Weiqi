@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public class StandardBoard : Board
+public class SquareBoard : Board
 {
 	public override Bounds GetWorldBounds()
 	{

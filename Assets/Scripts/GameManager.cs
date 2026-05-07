@@ -20,6 +20,7 @@ public class GameManager : MonoBehaviour
 	public IReadOnlyList<AiConfig> LegacyAiConfigs => legacyAiConfigs;
 	public string DefaultMatchModeId { get; private set; }
 	public GameObject DefaultMatchSkinPrefab { get; private set; }
+	public GameObject DefaultSphericalMatchSkinPrefab { get; private set; }
 
 	#region Game initialization
 	[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -84,11 +85,13 @@ public class GameManager : MonoBehaviour
 		{
 			DefaultMatchModeId = null;
 			DefaultMatchSkinPrefab = null;
+			DefaultSphericalMatchSkinPrefab = null;
 			return;
 		}
 
 		DefaultMatchModeId = settings.DefaultMatchModeId;
 		DefaultMatchSkinPrefab = settings.DefaultMatchSkinPrefab;
+		DefaultSphericalMatchSkinPrefab = settings.DefaultSphericalMatchSkinPrefab;
 		if(DefaultMatchSkinPrefab == null)
 			Debug.LogError("Default match skin prefab is not configured in GameSettings.");
 		for(int i = 0; i < settings.LegacyMatchModes.Count; ++i)

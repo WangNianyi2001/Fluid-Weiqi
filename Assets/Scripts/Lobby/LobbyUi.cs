@@ -43,6 +43,9 @@ public class LobbyUi : MonoBehaviour
 		matchModeDropdown.onValueChanged.AddListener(OnMatchModeDropdownValueChanged);
 		boardSizeSlider.onValueChanged.AddListener(OnBoardSizeSliderValueChanged);
 		stoneHardnessSlider.onValueChanged.AddListener(OnStoneHardnessSliderValueChanged);
+		SetBoardShapeOptions(allBoardShapeOptions);
+		boardShapeDropdown.interactable = Lobby.Current.IsHost;
+		boardShapeDropdown.onValueChanged.AddListener(OnBoardShapeDropdownValueChanged);
 		Lobby.Current.OnMatchRuleChanged += OnMatchRuleChanged;
 		RefreshMatchRuleArea();
 
@@ -180,8 +183,16 @@ public class LobbyUi : MonoBehaviour
 	[SerializeField] Slider boardSizeSlider;
 	[SerializeField] Text stoneHardnessText;
 	[SerializeField] Slider stoneHardnessSlider;
+	[SerializeField] Dropdown boardShapeDropdown;
 
 	readonly List<MatchModeConfig> matchModeOptions = new();
+
+	static readonly BoardShape[] allBoardShapeOptions = new BoardShape[]
+	{
+		BoardShape.Square,
+		BoardShape.Sphere,
+	};
+	readonly List<BoardShape> boardShapeOptions = new();
 	void SetMatchModeOptions(IReadOnlyList<MatchModeConfig> options)
 	{
 		matchModeOptions.Clear();
@@ -229,6 +240,24 @@ public class LobbyUi : MonoBehaviour
 		HostLobby.Current?.SetMatchRule(rule);
 	}
 
+	void SetBoardShapeOptions(IList<BoardShape> value)
+	{
+		boardShapeOptions.Clear();
+		boardShapeOptions.AddRange(value);
+		boardShapeDropdown.options = boardShapeOptions
+			.Select(s => new Dropdown.OptionData(s.ToLocalizedString()))
+			.ToList();
+	}
+
+	void OnBoardShapeDropdownValueChanged(int index)
+	{
+		if(!boardShapeOptions.IsValidIndex(index))
+			return;
+		var rule = Lobby.Current.MatchRule;
+		rule.boardShape = boardShapeOptions[index];
+		HostLobby.Current?.SetMatchRule(rule);
+	}
+
 	void OnMatchRuleChanged()
 	{
 		RefreshMatchRuleArea();
@@ -242,6 +271,9 @@ public class LobbyUi : MonoBehaviour
 		boardSizeSlider.value = rule.boardSize;
 		stoneHardnessText.text = rule.stoneHardness.ToString("F2");
 		stoneHardnessSlider.value = rule.stoneHardness;
+		int shapeIndex = boardShapeOptions.IndexOf(rule.boardShape);
+		if(shapeIndex >= 0)
+			boardShapeDropdown.value = shapeIndex;
 	}
 	#endregion
 

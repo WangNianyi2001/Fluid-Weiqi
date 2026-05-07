@@ -118,6 +118,8 @@ public abstract class Board : MonoBehaviour
 		if(renderState == null || caches == null || !caches.isInitialized)
 			return;
 
+		caches.topology = Topology;
+
 		Color[] colors = PlayerColors ?? new Color[] { Color.black, Color.white };
 		BoardUtility.RenderAnalysis(caches, renderState, colors);
 		if(material == null)
@@ -126,6 +128,8 @@ public abstract class Board : MonoBehaviour
 		if(material.HasProperty("_DistributionMap"))
 		{
 			material.SetTexture("_DistributionMap", caches.distributionMap);
+			if(material.HasProperty("_Topology"))
+				material.SetFloat("_Topology", (float)Topology);
 			int playerCount = colors.Length;
 			for(int player = 0; player < BoardUtility.MaxPlayers; ++player)
 			{
@@ -194,6 +198,15 @@ public abstract class Board : MonoBehaviour
 
 	protected virtual void UpdateGridMaterialParameters()
 	{
+		if(GridMaterial == null)
+			return;
+
+		if(GridMaterial.HasProperty("_Topology"))
+			GridMaterial.SetFloat("_Topology", (float)Topology);
+		if(GridMaterial.HasProperty("_ShowStarPoints"))
+			GridMaterial.SetFloat("_ShowStarPoints", 1f);
+		if(GridMaterial.HasProperty("_ShowGridLines"))
+			GridMaterial.SetFloat("_ShowGridLines", 1f);
 	}
 	#endregion
 
@@ -218,6 +231,22 @@ public abstract class Board : MonoBehaviour
 	#endregion
 
 	#region Coordinate conversion
+	public virtual BoardUtility.BoardTopology Topology => BoardUtility.BoardTopology.Flat;
+
+	/// <summary>
+	/// Snap and clamp/wrap an absolute board position to the nearest legal grid point.
+	/// Square: round then clamp to [0, Size-1].
+	/// Override in subclasses for other topologies.
+	/// </summary>
+	public virtual Vector2 NormalizeAbsolutePosition(Vector2 absolutePosition)
+	{
+		float maxCoord = State.BoardStateExtent;
+		return new Vector2(
+			Mathf.Clamp(Mathf.Round(absolutePosition.x), 0f, maxCoord),
+			Mathf.Clamp(Mathf.Round(absolutePosition.y), 0f, maxCoord)
+		);
+	}
+
 	public abstract Bounds GetWorldBounds();
 	public abstract Vector2 WorldToBoardLocalPosition(Vector3 worldPosition);
 	public abstract Vector3 BoardLocalToWorldPosition(Vector2 boardLocalPosition);

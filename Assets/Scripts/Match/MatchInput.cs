@@ -53,13 +53,7 @@ public class MatchInput : MonoBehaviour
 		Vector2 absolutePosition = Board.Current.WorldToAbsolutePosition(hit.point);
 		bool freePlace = shiftDown ^ capslocked;
 		if(!freePlace)
-		{
-			float maxCoord = Board.Current.State.BoardStateExtent;
-			absolutePosition = new Vector2(
-				Mathf.Clamp(Mathf.Round(absolutePosition.x), 0, maxCoord),
-				Mathf.Clamp(Mathf.Round(absolutePosition.y), 0, maxCoord)
-			);
-		}
+			absolutePosition = Board.Current.NormalizeAbsolutePosition(absolutePosition);
 
 		if(!hasCursorPosition)
 		{
@@ -81,6 +75,8 @@ public class MatchInput : MonoBehaviour
 		}
 		if(Input.GetMouseButtonDown(1))
 		{
+			if(Board.Current.Topology == BoardUtility.BoardTopology.Sphere)
+				return;
 			OnRemove?.Invoke(absolutePosition);
 			OnCursorMove?.Invoke(absolutePosition);
 		}
