@@ -40,7 +40,7 @@ public struct StonePlacementSnapshot
 public sealed class BoardStateSnapshot
 {
 	public int playerCount;
-	public int size;
+	public float size;
 	public float stoneHardness;
 	public float shrinkMargin;
 	public List<StonePlacementSnapshot> stones = new();
@@ -98,7 +98,7 @@ public static class NetworkSnapshotUtility
 		BoardStateSnapshot snapshot = new BoardStateSnapshot
 		{
 			playerCount = state.PlayerCount,
-			size = Mathf.RoundToInt(state.Size),
+			size = state.Size,
 			stoneHardness = state.StoneHardness,
 			shrinkMargin = state.ShrinkMargin,
 		};
@@ -127,10 +127,11 @@ public static class NetworkSnapshotUtility
 		if(snapshot == null)
 			return null;
 
-		BoardState state = new BoardState(snapshot.playerCount, Mathf.Max(1, snapshot.size))
+		BoardState state = new BoardState(snapshot.playerCount, Mathf.Max(1, Mathf.RoundToInt(snapshot.size)))
 		{
 			StoneHardness = snapshot.stoneHardness,
 		};
+		state.SetSize(snapshot.size);
 		state.SetShrinkMargin(snapshot.shrinkMargin);
 
 		if(snapshot.stones != null)

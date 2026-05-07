@@ -411,6 +411,9 @@ public abstract class Match : MonoBehaviour
 				if(shrunkState == null)
 				{
 					EndMatch();
+					if(ShouldBroadcastAuthorityResult())
+						BroadcastAuthorityResult(true, null, playerIndex, pendingAuthorityActionSeq);
+					pendingAuthorityActionSeq = 0;
 					return;
 				}
 				board.SetState(shrunkState);
