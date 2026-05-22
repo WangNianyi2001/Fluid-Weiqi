@@ -58,6 +58,7 @@ public class LaoSongAiPlayer : AiPlayer
 	void ExecuteMove(BoardState state)
 	{
 		int rollCount = laoSongConfig != null ? laoSongConfig.MaxRollCount : 3;
+		float placementStrength = Match.PlacementStrengthPerPlacement;
 
 		for(int i = 0; i < rollCount; ++i)
 		{
@@ -65,7 +66,7 @@ public class LaoSongAiPlayer : AiPlayer
 				return;
 
 			Vector2 candidate = Board.Current.SampleUniformAbsolutePosition();
-			if(Match.ReceivePlace(candidate))
+			if(Match.ReceivePlace(PlayerIndex, candidate, placementStrength))
 			{
 				NotifyMadeMove();
 				return;
@@ -75,7 +76,7 @@ public class LaoSongAiPlayer : AiPlayer
 		if(cancelled || Match.IsEnded)
 			return;
 
-		Match.ReceivePass();
+		Match.ReceivePass(PlayerIndex);
 		NotifyMadeMove();
 	}
 }

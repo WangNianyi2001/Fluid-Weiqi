@@ -99,7 +99,7 @@ public class OnlinePlayer : MatchPlayer
 		autoPassCoroutine = null;
 		if(!waitingForRemoteAction || Match.IsEnded)
 			yield break;
-		Match.ReceivePass();
+		Match.ReceivePass(PlayerIndex);
 		waitingForRemoteAction = false;
 		NotifyMadeMove();
 	}
@@ -118,16 +118,16 @@ public class OnlinePlayer : MatchPlayer
 		switch(request.actionType)
 		{
 			case MatchActionType.Place:
-				succeed = Match.ReceivePlace(request.position);
+				succeed = Match.ReceivePlace(PlayerIndex, request.position, request.strength);
 				shouldNotify = !(Match is TrainingMatch);
 				break;
 			case MatchActionType.Pass:
-				Match.ReceivePass();
+				Match.ReceivePass(PlayerIndex);
 				succeed = true;
 				shouldNotify = true;
 				break;
 			case MatchActionType.Remove:
-				Match.ReceiveRemove(request.position);
+				Match.ReceiveRemove(PlayerIndex, request.position);
 				succeed = true;
 				shouldNotify = false;
 				break;
@@ -138,7 +138,8 @@ public class OnlinePlayer : MatchPlayer
 
 		if(succeed && shouldNotify)
 		{
-			waitingForRemoteAction = false;
+			if(!Match.UseContinuousPlacement)
+				waitingForRemoteAction = false;
 			NotifyMadeMove();
 		}
 
@@ -183,9 +184,10 @@ public class OnlinePlayer : MatchPlayer
 	{
 		if(!receivingLocalMove)
 			return;
-		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Place, position))
+		float placementStrength = Match.PlacementStrengthPerPlacement;
+		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Place, position, placementStrength))
 		{
-			if(!(Match is TrainingMatch))
+			if(!(Match is TrainingMatch) && !Match.UseContinuousPlacement)
 				receivingLocalMove = false;
 		}
 	}
@@ -195,7 +197,10 @@ public class OnlinePlayer : MatchPlayer
 		if(!receivingLocalMove)
 			return;
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Remove, position))
-			receivingLocalMove = false;
+		{
+			if(!Match.UseContinuousPlacement)
+				receivingLocalMove = false;
+		}
 	}
 
 	void OnPass()
@@ -203,6 +208,9 @@ public class OnlinePlayer : MatchPlayer
 		if(!receivingLocalMove)
 			return;
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Pass, Vector2.zero))
-			receivingLocalMove = false;
+		{
+			if(!Match.UseContinuousPlacement)
+				receivingLocalMove = false;
+		}
 	}
 }

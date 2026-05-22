@@ -35,6 +35,8 @@ public abstract class Match : MonoBehaviour
 	readonly List<MatchPlayer> players = new();
 	bool isEnded;
 	public bool IsEnded => isEnded;
+	int activePlayerIndex = -1;
+	float activePlacementStrength = 1f;
 	bool[] playerPassStates;
 	int turnSeq;
 	int nextActionSeq = 1;
@@ -52,7 +54,7 @@ public abstract class Match : MonoBehaviour
 	{
 		InitializePlayers();
 		CurrentPlayerIndex = 0;
-		BeginCurrentPlayerTurn();
+		BeginMoveWindow();
 		InitializeNetworkTransport();
 	}
 
@@ -109,7 +111,7 @@ public abstract class Match : MonoBehaviour
 			}
 
 			if(!isEnded)
-				BeginCurrentPlayerTurn();
+				BeginMoveWindow();
 		}
 	}
 
@@ -130,18 +132,38 @@ public abstract class Match : MonoBehaviour
 
 	public bool ReceivePlace(Vector2 position)
 	{
-		OnPlace(position);
+		return ReceivePlace(CurrentPlayerIndex, position, PlacementStrengthPerPlacement);
+	}
+
+	public bool ReceivePlace(int playerIndex, Vector2 position)
+	{
+		return ReceivePlace(playerIndex, position, PlacementStrengthPerPlacement);
+	}
+
+	public bool ReceivePlace(int playerIndex, Vector2 position, float strength)
+	{
+		ExecuteAsPlayer(playerIndex, Mathf.Max(0.0001f, strength), () => OnPlace(position));
 		return LastPlacementSucceed;
 	}
 
 	public void ReceiveRemove(Vector2 position)
 	{
-		OnRemove(position);
+		ReceiveRemove(CurrentPlayerIndex, position);
+	}
+
+	public void ReceiveRemove(int playerIndex, Vector2 position)
+	{
+		ExecuteAsPlayer(playerIndex, 1f, () => OnRemove(position));
 	}
 
 	public void ReceivePass()
 	{
-		OnPass();
+		ReceivePass(CurrentPlayerIndex);
+	}
+
+	public void ReceivePass(int playerIndex)
+	{
+		ExecuteAsPlayer(playerIndex, 1f, OnPass);
 	}
 
 	protected virtual void OnCursorEnter(Vector2 position)
@@ -159,6 +181,22 @@ public abstract class Match : MonoBehaviour
 		Board.Current.ClearPreview();
 	}
 
+	protected int ActivePlayerIndex => activePlayerIndex >= 0 ? activePlayerIndex : CurrentPlayerIndex;
+
+	void ExecuteAsPlayer(int playerIndex, float placementStrength, Action action)
+	{
+		if(action == null)
+			return;
+
+		int previous = activePlayerIndex;
+		float previousStrength = activePlacementStrength;
+		activePlayerIndex = Mathf.Clamp(playerIndex, 0, Mathf.Max(0, PlayerCount - 1));
+		activePlacementStrength = placementStrength;
+		action();
+		activePlacementStrength = previousStrength;
+		activePlayerIndex = previous;
+	}
+
 	protected virtual void OnPlace(Vector2 position)
 	{
 		LastPlacementSucceed = false;
@@ -171,14 +209,14 @@ public abstract class Match : MonoBehaviour
 		AnalyzeState(currentState);
 
 		LastPlacementSucceed = BoardUtility.TryPlaceStoneStandard(
-			board.Caches, currentState, currentPlayerIndex, position, out BoardState nextState);
+			board.Caches, currentState, ActivePlayerIndex, position, out BoardState nextState, activePlacementStrength);
 		if(!LastPlacementSucceed)
 			return;
 
 		if(AudioManager.Instance != null)
 			AudioManager.Instance.PlayPlaceStoneSound();
 
-		int capturedStoneCount = CountCapturedStones(currentState, nextState, currentPlayerIndex);
+		int capturedStoneCount = CountCapturedStones(currentState, nextState, ActivePlayerIndex);
 		if(capturedStoneCount > 0 && AudioManager.Instance != null)
 			AudioManager.Instance.PlayCaptureSound();
 
@@ -269,6 +307,21 @@ public abstract class Match : MonoBehaviour
 	}
 
 	protected int TurnSequence => turnSeq;
+	public virtual bool UseContinuousPlacement => false;
+	public virtual float ContinuousPlacementFrequencyPerSecond => 0f;
+	public virtual float ContinuousPlacementMaxWeightPerSecond => 1f;
+	public float PlacementStrengthPerPlacement
+	{
+		get
+		{
+			if(!UseContinuousPlacement)
+				return 1f;
+
+			float frequency = Mathf.Max(1f, ContinuousPlacementFrequencyPerSecond);
+			float maxWeightPerSecond = Mathf.Max(0.0001f, ContinuousPlacementMaxWeightPerSecond);
+			return maxWeightPerSecond / frequency;
+		}
+	}
 
 	public virtual int GetCurrentTurnNumber()
 	{
@@ -301,6 +354,20 @@ public abstract class Match : MonoBehaviour
 	protected void StepPlayerIndex()
 	{
 		CurrentPlayerIndex = (CurrentPlayerIndex + 1) % PlayerCount;
+	}
+
+	protected void IncrementTurnSequence()
+	{
+		turnSeq += 1;
+	}
+
+	protected int RuntimePlayerCount => players.Count;
+
+	protected void SetPlayerMoveRight(int playerIndex, bool canMove)
+	{
+		if(playerIndex < 0 || playerIndex >= players.Count)
+			return;
+		players[playerIndex]?.SetMoveRight(canMove);
 	}
 
 	void InitializePlayers()
@@ -394,12 +461,10 @@ public abstract class Match : MonoBehaviour
 
 	void OnPlayerMadeMove(int playerIndex)
 	{
-		if(playerIndex != CurrentPlayerIndex)
+		if(!CanPlayerMakeMoveNow(playerIndex))
 			return;
 
-		turnSeq += 1;
-		if(!isEnded)
-			StepPlayerIndex();
+		OnPlayerMoveAccepted(playerIndex);
 
 		// Try shrinking the board if enabled
 		if(!isEnded && Rule.useShrinking)
@@ -426,10 +491,34 @@ public abstract class Match : MonoBehaviour
 		pendingAuthorityActionSeq = 0;
 
 		if(!isEnded)
-			BeginCurrentPlayerTurn();
+			BeginMoveWindow();
 	}
 
-	void BeginCurrentPlayerTurn()
+	/// <summary>
+	/// Defines whether a player is currently allowed to make a move.
+	/// Default behavior is strict turn-based: only CurrentPlayerIndex can act.
+	/// </summary>
+	protected virtual bool CanPlayerMakeMoveNow(int playerIndex)
+	{
+		return playerIndex == CurrentPlayerIndex;
+	}
+
+	/// <summary>
+	/// Called once after a valid move has been accepted from a player.
+	/// Default behavior increments turn sequence and advances to next player.
+	/// </summary>
+	protected virtual void OnPlayerMoveAccepted(int playerIndex)
+	{
+		IncrementTurnSequence();
+		if(!isEnded)
+			StepPlayerIndex();
+	}
+
+	/// <summary>
+	/// Grants move rights for the next move window.
+	/// Default behavior cancels all players and grants only the current player.
+	/// </summary>
+	protected virtual void BeginMoveWindow()
 	{
 		if(isEnded || players.Count == 0)
 			return;
@@ -441,7 +530,7 @@ public abstract class Match : MonoBehaviour
 		if(!IsCurrentPlayerLocallyControllable)
 			Board.Current?.ClearPreview();
 
-		players[safeIndex].SetMoveRight(true);
+		SetPlayerMoveRight(safeIndex, true);
 	}
 
 	bool ShouldBroadcastAuthorityResult()
@@ -519,7 +608,7 @@ public abstract class Match : MonoBehaviour
 			return;
 		}
 
-		if(playerIndex != CurrentPlayerIndex)
+		if(!CanPlayerMakeMoveNow(playerIndex))
 		{
 			BroadcastAuthorityResult(false, "not-current-player", playerIndex, request.actionSeq);
 			return;
@@ -586,17 +675,17 @@ public abstract class Match : MonoBehaviour
 				}
 				else if(!result.flowSnapshot.isEnded && !isEnded)
 				{
-					BeginCurrentPlayerTurn();
+					BeginMoveWindow();
 				}
 			}
 		}
 		else
 		{
-			BeginCurrentPlayerTurn();
+			BeginMoveWindow();
 		}
 	}
 
-	public bool TrySendPlayerActionRequest(int playerIndex, MatchActionType actionType, Vector2 position)
+	public bool TrySendPlayerActionRequest(int playerIndex, MatchActionType actionType, Vector2 position, float strength = 1f)
 	{
 		if(Lobby.Current == null || !Lobby.Current.IsOnline || Lobby.Current.IsHost)
 			return false;
@@ -611,6 +700,7 @@ public abstract class Match : MonoBehaviour
 			playerIndex = playerIndex,
 			actionType = actionType,
 			position = position,
+			strength = strength,
 			turnSeq = turnSeq,
 			actionSeq = nextActionSeq++,
 		};
@@ -618,10 +708,10 @@ public abstract class Match : MonoBehaviour
 		return true;
 	}
 
-	void CancelAllPlayers()
+	protected void CancelAllPlayers()
 	{
 		for(int i = 0; i < players.Count; ++i)
-			players[i]?.SetMoveRight(false);
+			SetPlayerMoveRight(i, false);
 	}
 
 	int CountCapturedStones(BoardState oldState, BoardState newState, int placedPlayer)

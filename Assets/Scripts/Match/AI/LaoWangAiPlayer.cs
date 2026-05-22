@@ -81,13 +81,15 @@ public class LaoWangAiPlayer : AiPlayer
 		if(cancelled || Match.IsEnded)
 			yield break;
 
-		if(hasCandidate && Match.ReceivePlace(bestCandidate))
+		float placementStrength = Match.PlacementStrengthPerPlacement;
+
+		if(hasCandidate && Match.ReceivePlace(PlayerIndex, bestCandidate, placementStrength))
 		{
 			NotifyMadeMove();
 			yield break;
 		}
 
-		Match.ReceivePass();
+		Match.ReceivePass(PlayerIndex);
 		NotifyMadeMove();
 	}
 

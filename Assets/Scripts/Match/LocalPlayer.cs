@@ -81,16 +81,20 @@ public class LocalPlayer : MatchPlayer
 		if(!receivingMove)
 			return;
 
-		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Place, position))
+		float placementStrength = Match.PlacementStrengthPerPlacement;
+
+		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Place, position, placementStrength))
 		{
-			SetMoveRight(false);
+			if(!Match.UseContinuousPlacement)
+				SetMoveRight(false);
 			return;
 		}
 
-		bool succeed = Match.ReceivePlace(position);
+		bool succeed = Match.ReceivePlace(PlayerIndex, position, placementStrength);
 		if(succeed)
 		{
-			SetMoveRight(false);
+			if(!Match.UseContinuousPlacement)
+				SetMoveRight(false);
 			NotifyMadeMove();
 		}
 	}
@@ -104,7 +108,7 @@ public class LocalPlayer : MatchPlayer
 			SetMoveRight(false);
 			return;
 		}
-		Match.ReceiveRemove(position);
+		Match.ReceiveRemove(PlayerIndex, position);
 	}
 
 	void OnPass()
@@ -114,12 +118,14 @@ public class LocalPlayer : MatchPlayer
 
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Pass, Vector2.zero))
 		{
-			SetMoveRight(false);
+			if(!Match.UseContinuousPlacement)
+				SetMoveRight(false);
 			return;
 		}
 
-		SetMoveRight(false);
-		Match.ReceivePass();
+		if(!Match.UseContinuousPlacement)
+			SetMoveRight(false);
+		Match.ReceivePass(PlayerIndex);
 		NotifyMadeMove();
 	}
 }

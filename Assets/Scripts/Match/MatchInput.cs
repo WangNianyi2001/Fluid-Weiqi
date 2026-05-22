@@ -25,6 +25,8 @@ public class MatchInput : MonoBehaviour
 
 	bool hasCursorPosition;
 	Vector2 lastCursorPosition;
+	bool isPrimaryDown;
+	float nextPrimaryPlaceTime;
 
 	public event Action<Vector2> OnCursorEnter;
 	public event Action<Vector2> OnCursorMove;
@@ -73,12 +75,14 @@ public class MatchInput : MonoBehaviour
 
 		if(Camera == null || Board.Current == null)
 		{
+			ResetPrimaryState();
 			EmitCursorExitIfNeeded();
 			return;
 		}
 
 		if(!TryGetBoardHit(out RaycastHit hit))
 		{
+			ResetPrimaryState();
 			EmitCursorExitIfNeeded();
 			return;
 		}
@@ -98,11 +102,7 @@ public class MatchInput : MonoBehaviour
 			OnCursorMove?.Invoke(absolutePosition);
 		}
 
-		if(Input.GetMouseButtonDown(0))
-		{
-			OnPlace?.Invoke(absolutePosition);
-			OnCursorMove?.Invoke(absolutePosition);
-		}
+		ProcessPrimaryPlacement(absolutePosition);
 		if(Input.GetMouseButtonDown(1))
 		{
 			if(Board.Current.Topology == BoardUtility.BoardTopology.Sphere)
@@ -110,6 +110,60 @@ public class MatchInput : MonoBehaviour
 			OnRemove?.Invoke(absolutePosition);
 			OnCursorMove?.Invoke(absolutePosition);
 		}
+	}
+
+	void ProcessPrimaryPlacement(Vector2 absolutePosition)
+	{
+		bool primaryDown = Input.GetMouseButton(0);
+		if(!primaryDown)
+		{
+			ResetPrimaryState();
+			return;
+		}
+
+		if(!isPrimaryDown)
+		{
+			isPrimaryDown = true;
+			EmitPlace(absolutePosition);
+
+			float frequency = GetPlacementFrequencyPerSecond();
+			nextPrimaryPlaceTime = Time.unscaledTime + 1f / frequency;
+			return;
+		}
+
+		if(!UseContinuousPlacement())
+			return;
+
+		if(Time.unscaledTime >= nextPrimaryPlaceTime)
+		{
+			EmitPlace(absolutePosition);
+			float frequency = GetPlacementFrequencyPerSecond();
+			nextPrimaryPlaceTime = Time.unscaledTime + 1f / frequency;
+		}
+	}
+
+	void EmitPlace(Vector2 absolutePosition)
+	{
+		OnPlace?.Invoke(absolutePosition);
+		OnCursorMove?.Invoke(absolutePosition);
+	}
+
+	void ResetPrimaryState()
+	{
+		isPrimaryDown = false;
+		nextPrimaryPlaceTime = 0f;
+	}
+
+	bool UseContinuousPlacement()
+	{
+		return Match.Current != null && Match.Current.UseContinuousPlacement;
+	}
+
+	float GetPlacementFrequencyPerSecond()
+	{
+		if(Match.Current == null)
+			return 1f;
+		return Mathf.Max(1f, Match.Current.ContinuousPlacementFrequencyPerSecond);
 	}
 
 	void EmitCursorExitIfNeeded()

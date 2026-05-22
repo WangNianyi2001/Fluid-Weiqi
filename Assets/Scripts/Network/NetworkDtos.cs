@@ -23,6 +23,7 @@ public sealed class MatchActionRequest
 	public int playerIndex;
 	public MatchActionType actionType;
 	public Vector2 position;
+	public float strength;
 	public int turnSeq;
 	public int actionSeq;
 }
