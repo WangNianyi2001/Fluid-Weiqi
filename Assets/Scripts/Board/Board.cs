@@ -144,7 +144,7 @@ public abstract class Board : MonoBehaviour
 		caches.topology = Topology;
 
 		Color[] colors = PlayerColors ?? new Color[] { Color.black, Color.white };
-		BoardUtility.RenderAnalysis(caches, renderState, colors);
+		BoardUtility.RenderForDisplay(caches, renderState, colors);
 		if(material == null)
 			return;
 
@@ -232,13 +232,14 @@ public abstract class Board : MonoBehaviour
 	#endregion
 
  	#region Preview
-	public void ClearPreview()
+	public void ClearPreview(bool refreshRendering = true)
 	{
 		if(!hasPreview)
 			return;
 
 		hasPreview = false;
-		RefreshRendering();
+		if(refreshRendering)
+			RefreshRendering();
 	}
 
 	public void ShowPreview(BoardState stateToPreview)

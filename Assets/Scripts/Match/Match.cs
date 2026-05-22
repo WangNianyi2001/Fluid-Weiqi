@@ -220,8 +220,9 @@ public abstract class Match : MonoBehaviour
 		if(capturedStoneCount > 0 && AudioManager.Instance != null)
 			AudioManager.Instance.PlayCaptureSound();
 
+		// SetState already refreshes board visuals with the latest state.
 		board.SetState(nextState);
-		board.ClearPreview();
+		board.ClearPreview(false);
 		onStateChanged?.Invoke();
 	}
 
@@ -272,10 +273,7 @@ public abstract class Match : MonoBehaviour
 		if(renderState == null || board == null || board.Caches == null || !board.Caches.isInitialized)
 			return;
 
-		Color[] playerColors = new Color[Mathf.Min(PlayerCount, BoardUtility.MaxPlayers)];
-		for(int i = 0; i < playerColors.Length; ++i)
-			playerColors[i] = PlayerInfos[i].color;
-		BoardUtility.RenderAnalysis(board.Caches, renderState, playerColors);
+		BoardUtility.RenderForGameplayQuery(board.Caches, renderState);
 	}
 	#endregion
 
