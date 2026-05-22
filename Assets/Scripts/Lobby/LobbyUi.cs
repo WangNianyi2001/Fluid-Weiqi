@@ -305,12 +305,66 @@ public class LobbyUi : MonoBehaviour
 	[Header("Footer")]
 	[SerializeField] Button startButton;
 	[SerializeField] Text errorText;
+	[SerializeField] Text warningText;
+
+	const int PaintingPerformanceWarningBoardSizeThreshold = 9;
+	const string PaintingPerformanceWarningMessage = "画笔模式在过大棋盘上会有性能问题。";
+
+	void EnsureWarningText()
+	{
+		if(warningText != null || errorText == null)
+			return;
+
+		GameObject warningObject = new GameObject("Warning Text", typeof(RectTransform));
+		RectTransform warningRect = warningObject.GetComponent<RectTransform>();
+		RectTransform errorRect = errorText.rectTransform;
+		warningRect.SetParent(errorRect.parent, false);
+		warningRect.anchorMin = errorRect.anchorMin;
+		warningRect.anchorMax = errorRect.anchorMax;
+		warningRect.pivot = errorRect.pivot;
+		warningRect.sizeDelta = errorRect.sizeDelta;
+		warningRect.anchoredPosition = errorRect.anchoredPosition + new Vector2(0f, errorRect.rect.height + 6f);
+
+		warningText = warningObject.AddComponent<Text>();
+		warningText.font = errorText.font;
+		warningText.fontSize = errorText.fontSize;
+		warningText.fontStyle = errorText.fontStyle;
+		warningText.alignment = errorText.alignment;
+		warningText.horizontalOverflow = errorText.horizontalOverflow;
+		warningText.verticalOverflow = errorText.verticalOverflow;
+		warningText.raycastTarget = false;
+		warningText.supportRichText = true;
+		warningText.text = string.Empty;
+		warningText.gameObject.SetActive(false);
+
+		int errorSiblingIndex = errorRect.GetSiblingIndex();
+		warningRect.SetSiblingIndex(Mathf.Max(0, errorSiblingIndex));
+	}
+
+	bool ShouldShowPaintingPerformanceWarning()
+	{
+		if(Lobby.Current == null)
+			return false;
+
+		MatchRule rule = Lobby.Current.MatchRule;
+		if(rule.boardSize <= PaintingPerformanceWarningBoardSizeThreshold)
+			return false;
+
+		if(GameManager.Instance == null || !GameManager.Instance.TryGetMatchModeConfig(rule.modeId, out MatchModeConfig modeConfig))
+			return false;
+
+		return modeConfig is PaintingMatchModeConfig;
+	}
 
 	void RefreshFooterArea()
 	{
+		EnsureWarningText();
+
 		if(!Lobby.Current.IsHost)
 		{
 			errorText.gameObject.SetActive(false);
+			if(warningText != null)
+				warningText.gameObject.SetActive(false);
 			return;
 		}
 
@@ -318,6 +372,13 @@ public class LobbyUi : MonoBehaviour
 		startButton.interactable = valid;
 		errorText.gameObject.SetActive(!valid);
 		errorText.text = errorMessage;
+
+		if(warningText != null)
+		{
+			bool showWarning = ShouldShowPaintingPerformanceWarning();
+			warningText.gameObject.SetActive(showWarning);
+			warningText.text = showWarning ? PaintingPerformanceWarningMessage : string.Empty;
+		}
 	}
 
 	public void OnStartButtonClicked()
