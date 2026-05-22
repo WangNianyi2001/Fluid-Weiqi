@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections;
 
 public enum OnlinePlayerRole
 {
@@ -13,6 +14,7 @@ public class OnlinePlayer : MatchPlayer
 	PlayerLocator playerLocator;
 	bool waitingForRemoteAction;
 	bool receivingLocalMove;
+	Coroutine autoPassCoroutine;
 	MatchInput input;
 
 	public override bool IsAlive => isConnected;
@@ -36,31 +38,47 @@ public class OnlinePlayer : MatchPlayer
 		}
 	}
 
-	public override void RequestMove(BoardState state)
+	public override void SetMoveRight(bool canMove)
 	{
-		waitingForRemoteAction = role == OnlinePlayerRole.RemoteToLocal;
-		receivingLocalMove = role == OnlinePlayerRole.LocalToRemote;
-
-		if(receivingLocalMove)
+		if(role == OnlinePlayerRole.RemoteToLocal)
 		{
+			if(canMove == waitingForRemoteAction)
+				return;
+
+			waitingForRemoteAction = canMove;
+
+			if(!canMove)
+			{
+				if(autoPassCoroutine != null)
+				{
+					StopCoroutine(autoPassCoroutine);
+					autoPassCoroutine = null;
+				}
+				return;
+			}
+
 			if(!isConnected)
-				Match.ReceiveCursorExit();
-			return;
+				autoPassCoroutine = StartCoroutine(AutoPassAsync());
 		}
-
-		if(!isConnected && waitingForRemoteAction)
+		else
 		{
-			Match.ReceivePass();
-			NotifyMadeMove();
-			return;
+			if(canMove == receivingLocalMove)
+				return;
+
+			receivingLocalMove = canMove;
+			if(!canMove || !isConnected)
+				Match.ReceiveCursorExit();
 		}
 	}
 
-	public override void CancelMove()
+	public override void Dispose()
 	{
-		waitingForRemoteAction = false;
-		receivingLocalMove = false;
-		Match.ReceiveCursorExit();
+		if(autoPassCoroutine != null)
+		{
+			StopCoroutine(autoPassCoroutine);
+			autoPassCoroutine = null;
+		}
+		base.Dispose();
 	}
 
 	public void SetConnectionState(bool alive)
@@ -68,15 +86,22 @@ public class OnlinePlayer : MatchPlayer
 		bool wasConnected = isConnected;
 		isConnected = alive;
 
-		if(wasConnected && !isConnected && waitingForRemoteAction)
-		{
-			Match.ReceivePass();
-			waitingForRemoteAction = false;
-			NotifyMadeMove();
-		}
+		if(wasConnected && !isConnected && waitingForRemoteAction && autoPassCoroutine == null)
+			autoPassCoroutine = StartCoroutine(AutoPassAsync());
 
 		if(receivingLocalMove && !alive)
 			Match.ReceiveCursorExit();
+	}
+
+	IEnumerator AutoPassAsync()
+	{
+		yield return null;
+		autoPassCoroutine = null;
+		if(!waitingForRemoteAction || Match.IsEnded)
+			yield break;
+		Match.ReceivePass();
+		waitingForRemoteAction = false;
+		NotifyMadeMove();
 	}
 
 	public bool TryHandleRemoteRequest(MatchActionRequest request)
@@ -170,9 +195,7 @@ public class OnlinePlayer : MatchPlayer
 		if(!receivingLocalMove)
 			return;
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Remove, position))
-		{
 			receivingLocalMove = false;
-		}
 	}
 
 	void OnPass()
@@ -180,8 +203,6 @@ public class OnlinePlayer : MatchPlayer
 		if(!receivingLocalMove)
 			return;
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Pass, Vector2.zero))
-		{
 			receivingLocalMove = false;
-		}
 	}
 }

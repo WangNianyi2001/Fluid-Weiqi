@@ -4,6 +4,7 @@ using System.Collections;
 public class LaoSongAiPlayer : AiPlayer
 {
 	LaoSongAiConfig laoSongConfig;
+	bool isActive;
 	bool cancelled;
 
 	public void Initialize(Match match, int playerIndex, MatchRule rule, LaoSongAiConfig config)
@@ -12,23 +13,25 @@ public class LaoSongAiPlayer : AiPlayer
 		laoSongConfig = config;
 	}
 
-	public override void RequestMove(BoardState state)
+	public override void SetMoveRight(bool canMove)
 	{
+		if(canMove == isActive)
+			return;
+		isActive = canMove;
+
+		if(!canMove)
+		{
+			cancelled = true;
+			StopAllCoroutines();
+			return;
+		}
+
 		cancelled = false;
-		if(state == null || Match.IsEnded)
+		BoardState snapshot = Board.Current != null ? new BoardState(Board.Current.State) : null;
+		if(snapshot == null || Match.IsEnded)
 			return;
 
-		float delay = GetDelay();
-		if(delay > 0f)
-			StartCoroutine(ExecuteAfterDelay(state, delay));
-		else
-			ExecuteMove(state);
-	}
-
-	public override void CancelMove()
-	{
-		cancelled = true;
-		StopAllCoroutines();
+		StartCoroutine(ExecuteAfterDelay(snapshot, GetDelay()));
 	}
 
 	float GetDelay()
@@ -44,7 +47,10 @@ public class LaoSongAiPlayer : AiPlayer
 
 	IEnumerator ExecuteAfterDelay(BoardState state, float delay)
 	{
-		yield return new WaitForSeconds(delay);
+		if(delay > 0f)
+			yield return new WaitForSeconds(delay);
+		else
+			yield return null;
 		if(!cancelled && !Match.IsEnded)
 			ExecuteMove(state);
 	}

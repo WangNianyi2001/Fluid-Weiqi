@@ -7,6 +7,7 @@ public class LaoWangAiPlayer : AiPlayer
 	const float MinDistanceEpsilon = 0.0001f;
 
 	LaoWangAiConfig laoWangConfig;
+	bool isActive;
 	bool cancelled;
 	readonly BoardUtility.BoardCaches evaluationCaches = new();
 
@@ -16,19 +17,25 @@ public class LaoWangAiPlayer : AiPlayer
 		laoWangConfig = config;
 	}
 
-	public override void RequestMove(BoardState state)
+	public override void SetMoveRight(bool canMove)
 	{
+		if(canMove == isActive)
+			return;
+		isActive = canMove;
+
+		if(!canMove)
+		{
+			cancelled = true;
+			StopAllCoroutines();
+			return;
+		}
+
 		cancelled = false;
-		if(state == null || Match.IsEnded)
+		BoardState snapshot = Board.Current != null ? new BoardState(Board.Current.State) : null;
+		if(snapshot == null || Match.IsEnded)
 			return;
 
-		StartCoroutine(EvaluateAndMove(state));
-	}
-
-	public override void CancelMove()
-	{
-		cancelled = true;
-		StopAllCoroutines();
+		StartCoroutine(EvaluateAndMove(snapshot));
 	}
 
 	void OnDestroy()
@@ -38,6 +45,8 @@ public class LaoWangAiPlayer : AiPlayer
 
 	IEnumerator EvaluateAndMove(BoardState state)
 	{
+		yield return null; // ensure async relative to SetMoveRight caller
+
 		int sampleCount = laoWangConfig != null ? laoWangConfig.SampleCount : 12;
 		float evaluationDelay = laoWangConfig != null ? laoWangConfig.PerCandidateEvaluationDelay : 0f;
 

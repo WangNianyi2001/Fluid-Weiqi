@@ -441,9 +441,7 @@ public abstract class Match : MonoBehaviour
 		if(!IsCurrentPlayerLocallyControllable)
 			Board.Current?.ClearPreview();
 
-		BoardState state = Board.Current?.State;
-		BoardState snapshot = state != null ? new BoardState(state) : null;
-		players[safeIndex].RequestMove(snapshot);
+		players[safeIndex].SetMoveRight(true);
 	}
 
 	bool ShouldBroadcastAuthorityResult()
@@ -623,7 +621,7 @@ public abstract class Match : MonoBehaviour
 	void CancelAllPlayers()
 	{
 		for(int i = 0; i < players.Count; ++i)
-			players[i]?.CancelMove();
+			players[i]?.SetMoveRight(false);
 	}
 
 	int CountCapturedStones(BoardState oldState, BoardState newState, int placedPlayer)
