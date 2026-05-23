@@ -31,11 +31,10 @@ public class LaoWangAiPlayer : AiPlayer
 		}
 
 		cancelled = false;
-		BoardState snapshot = Board.Current != null ? new BoardState(Board.Current.State) : null;
-		if(snapshot == null || Match.IsEnded)
+		if(Match.IsEnded)
 			return;
 
-		StartCoroutine(EvaluateAndMove(snapshot));
+		StartCoroutine(EvaluateAndMoveLoop());
 	}
 
 	void OnDestroy()
@@ -43,9 +42,28 @@ public class LaoWangAiPlayer : AiPlayer
 		BoardUtility.Dispose(evaluationCaches);
 	}
 
-	IEnumerator EvaluateAndMove(BoardState state)
+	IEnumerator EvaluateAndMoveLoop()
 	{
 		yield return null; // ensure async relative to SetMoveRight caller
+
+		while(!cancelled && !Match.IsEnded && isActive)
+		{
+			BoardState state = Board.Current != null ? new BoardState(Board.Current.State) : null;
+			if(state == null)
+				yield break;
+
+			yield return EvaluateAndMoveOnce(state);
+
+			if(!Match.UseContinuousPlacement)
+				yield break;
+
+			float frequency = Mathf.Max(1f, Match.ContinuousPlacementFrequencyPerSecond);
+			yield return new WaitForSeconds(1f / frequency);
+		}
+	}
+
+	IEnumerator EvaluateAndMoveOnce(BoardState state)
+	{
 
 		int sampleCount = laoWangConfig != null ? laoWangConfig.SampleCount : 12;
 		float evaluationDelay = laoWangConfig != null ? laoWangConfig.PerCandidateEvaluationDelay : 0f;
@@ -89,8 +107,11 @@ public class LaoWangAiPlayer : AiPlayer
 			yield break;
 		}
 
-		Match.ReceivePass(PlayerIndex);
-		NotifyMadeMove();
+		if(!Match.UseContinuousPlacement)
+		{
+			Match.ReceivePass(PlayerIndex);
+			NotifyMadeMove();
+		}
 	}
 
 	bool IsLegalPlacement(BoardState state, Vector2 point)

@@ -27,11 +27,10 @@ public class LaoSongAiPlayer : AiPlayer
 		}
 
 		cancelled = false;
-		BoardState snapshot = Board.Current != null ? new BoardState(Board.Current.State) : null;
-		if(snapshot == null || Match.IsEnded)
+		if(Match.IsEnded)
 			return;
 
-		StartCoroutine(ExecuteAfterDelay(snapshot, GetDelay()));
+		StartCoroutine(ExecuteLoop(GetDelay()));
 	}
 
 	float GetDelay()
@@ -45,14 +44,25 @@ public class LaoSongAiPlayer : AiPlayer
 		return modeConfig.IsTurnBased ? laoSongConfig.TurnBasedModeDelay : 0f;
 	}
 
-	IEnumerator ExecuteAfterDelay(BoardState state, float delay)
+	IEnumerator ExecuteLoop(float initialDelay)
 	{
-		if(delay > 0f)
-			yield return new WaitForSeconds(delay);
-		else
-			yield return null;
-		if(!cancelled && !Match.IsEnded)
+		if(initialDelay > 0f)
+			yield return new WaitForSeconds(initialDelay);
+
+		while(!cancelled && !Match.IsEnded && isActive)
+		{
+			BoardState state = Board.Current != null ? new BoardState(Board.Current.State) : null;
+			if(state == null)
+				yield break;
+
 			ExecuteMove(state);
+
+			if(!Match.UseContinuousPlacement)
+				yield break;
+
+			float frequency = Mathf.Max(1f, Match.ContinuousPlacementFrequencyPerSecond);
+			yield return new WaitForSeconds(1f / frequency);
+		}
 	}
 
 	void ExecuteMove(BoardState state)
@@ -76,7 +86,10 @@ public class LaoSongAiPlayer : AiPlayer
 		if(cancelled || Match.IsEnded)
 			return;
 
-		Match.ReceivePass(PlayerIndex);
-		NotifyMadeMove();
+		if(!Match.UseContinuousPlacement)
+		{
+			Match.ReceivePass(PlayerIndex);
+			NotifyMadeMove();
+		}
 	}
 }

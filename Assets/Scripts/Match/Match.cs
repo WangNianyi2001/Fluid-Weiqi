@@ -37,7 +37,8 @@ public abstract class Match : MonoBehaviour
 	public bool IsEnded => isEnded;
 	int activePlayerIndex = -1;
 	float activePlacementStrength = 1f;
-	bool[] playerPassStates;
+	readonly Dictionary<int, bool> playerPassStates = new();
+	readonly Dictionary<int, bool> playerMoveRights = new();
 	int turnSeq;
 	int nextActionSeq = 1;
 	int pendingAuthorityActionSeq;
@@ -304,6 +305,15 @@ public abstract class Match : MonoBehaviour
 		}
 	}
 
+	public bool IsPlayerLocallyControllable(int playerIndex)
+	{
+		if(isEnded || players.Count == 0)
+			return false;
+		if(playerIndex < 0 || playerIndex >= players.Count)
+			return false;
+		return players[playerIndex].CanReceiveLocalInput;
+	}
+
 	protected int TurnSequence => turnSeq;
 	public virtual bool UseContinuousPlacement => false;
 	public virtual float ContinuousPlacementFrequencyPerSecond => 0f;
@@ -333,20 +343,33 @@ public abstract class Match : MonoBehaviour
 		remove => onCurrentPlayerChanged -= value;
 	}
 
-	protected Action<int, bool> onPlayerPassStateChanged;
-	public event Action<int, bool> OnPlayerPassStateChanged
+	protected Action onPlayerPassStateChanged;
+	public event Action OnPlayerPassStateChanged
 	{
 		add => onPlayerPassStateChanged += value;
 		remove => onPlayerPassStateChanged -= value;
 	}
 
+	protected Action onPlayerMoveRightChanged;
+	public event Action OnPlayerMoveRightChanged
+	{
+		add => onPlayerMoveRightChanged += value;
+		remove => onPlayerMoveRightChanged -= value;
+	}
+
+	public IReadOnlyDictionary<int, bool> PlayerMoveRights => playerMoveRights;
+	public IReadOnlyDictionary<int, bool> PlayerPassStates => playerPassStates;
+
 	protected void SetPlayerPassState(int playerIndex, bool passed)
 	{
-		if(playerPassStates == null || playerPassStates.Length != PlayerCount)
-			playerPassStates = new bool[PlayerCount];
-		if(playerIndex >= 0 && playerIndex < playerPassStates.Length)
-			playerPassStates[playerIndex] = passed;
-		onPlayerPassStateChanged?.Invoke(playerIndex, passed);
+		if(playerIndex < 0 || playerIndex >= PlayerCount)
+			return;
+
+		bool previous = playerPassStates.TryGetValue(playerIndex, out bool existing) && existing;
+		bool changed = previous != passed;
+		playerPassStates[playerIndex] = passed;
+		if(changed)
+			onPlayerPassStateChanged?.Invoke();
 	}
 
 	protected void StepPlayerIndex()
@@ -359,22 +382,38 @@ public abstract class Match : MonoBehaviour
 		turnSeq += 1;
 	}
 
+	public bool CanPlayerMove(int playerIndex)
+	{
+		if(playerIndex < 0)
+			return false;
+		return playerMoveRights.TryGetValue(playerIndex, out bool canMove) && canMove;
+	}
+
 	protected int RuntimePlayerCount => players.Count;
 
 	protected void SetPlayerMoveRight(int playerIndex, bool canMove)
 	{
 		if(playerIndex < 0 || playerIndex >= players.Count)
 			return;
+
+		bool previous = playerMoveRights.TryGetValue(playerIndex, out bool existing) && existing;
+		bool changed = previous != canMove;
+		playerMoveRights[playerIndex] = canMove;
 		players[playerIndex]?.SetMoveRight(canMove);
+		if(changed)
+			onPlayerMoveRightChanged?.Invoke();
 	}
 
 	void InitializePlayers()
 	{
 		players.Clear();
-		playerPassStates = new bool[PlayerCount];
+		playerPassStates.Clear();
+		playerMoveRights.Clear();
 
 		for(int i = 0; i < PlayerCount; ++i)
 		{
+			playerPassStates[i] = false;
+			playerMoveRights[i] = false;
 			MatchPlayer player = CreateRuntimePlayer(i);
 			if(player == null)
 				throw new MissingReferenceException($"Failed to create player runtime for index {i}.");
@@ -492,7 +531,7 @@ public abstract class Match : MonoBehaviour
 
 		pendingAuthorityActionSeq = 0;
 
-		if(!isEnded)
+		if(!isEnded && !UseContinuousPlacement)
 			BeginMoveWindow();
 	}
 
@@ -566,10 +605,21 @@ public abstract class Match : MonoBehaviour
 				currentPlayerIndex = CurrentPlayerIndex,
 				turnSeq = turnSeq,
 				isEnded = isEnded,
-				passStates = playerPassStates != null ? (bool[])playerPassStates.Clone() : null,
+				passStates = BuildPassStateArray(),
 			},
 		};
 		matchTransport.BroadcastActionResult(result);
+	}
+
+	bool[] BuildPassStateArray()
+	{
+		if(PlayerCount <= 0)
+			return Array.Empty<bool>();
+
+		bool[] states = new bool[PlayerCount];
+		for(int i = 0; i < states.Length; ++i)
+			states[i] = playerPassStates.TryGetValue(i, out bool passed) && passed;
+		return states;
 	}
 
 	void InitializeNetworkTransport()
@@ -684,7 +734,7 @@ public abstract class Match : MonoBehaviour
 					CancelAllPlayers();
 					onEnd?.Invoke();
 				}
-				else if(!result.flowSnapshot.isEnded && !isEnded)
+				else if(!result.flowSnapshot.isEnded && !isEnded && !UseContinuousPlacement)
 				{
 					BeginMoveWindow();
 				}
@@ -692,7 +742,8 @@ public abstract class Match : MonoBehaviour
 		}
 		else
 		{
-			BeginMoveWindow();
+			if(!UseContinuousPlacement)
+				BeginMoveWindow();
 		}
 	}
 

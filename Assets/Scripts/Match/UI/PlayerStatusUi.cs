@@ -9,15 +9,16 @@ public class PlayerStatusUi : MonoBehaviour
 	protected void Awake()
 	{
 		Match.OnStateChanged += RefreshAreas;
-		Match.OnCurrentPlayerChanged += HighlightCurrentPlayer;
 		Match.OnPlayerPassStateChanged += OnPassStateChanged;
+		Match.OnPlayerMoveRightChanged += OnPlayerMoveRightChanged;
 	}
 
 	protected void Start()
 	{
 		RebuildRows();
 		RefreshAreas();
-		HighlightCurrentPlayer(Match.CurrentPlayerIndex);
+		RefreshPassStates();
+		RefreshActivePlayers();
 	}
 
 	protected void OnDestroy()
@@ -25,8 +26,8 @@ public class PlayerStatusUi : MonoBehaviour
 		if(Match != null)
 		{
 			Match.OnStateChanged -= RefreshAreas;
-			Match.OnCurrentPlayerChanged -= HighlightCurrentPlayer;
 			Match.OnPlayerPassStateChanged -= OnPassStateChanged;
+			Match.OnPlayerMoveRightChanged -= OnPlayerMoveRightChanged;
 		}
 	}
 	#endregion
@@ -74,16 +75,43 @@ public class PlayerStatusUi : MonoBehaviour
 	[SerializeField] GameObject rowPrefab;
 	readonly List<PlayerStatusRow> rows = new();
 
-	void HighlightCurrentPlayer(int currentPlayer)
+	void RefreshActivePlayers()
 	{
+		var moveRights = Match.PlayerMoveRights;
+		bool hasAnyActive = false;
+		for(int i = 0; i < rows.Count; ++i)
+		{
+			bool isActive = moveRights != null && moveRights.TryGetValue(i, out bool canMove) && canMove;
+			rows[i].IsCurrent = isActive;
+			hasAnyActive |= isActive;
+		}
+
+		if(hasAnyActive)
+			return;
+
+		int currentPlayer = Match.CurrentPlayerIndex;
 		for(int i = 0; i < rows.Count; ++i)
 			rows[i].IsCurrent = i == currentPlayer;
 	}
 
-	void OnPassStateChanged(int playerIndex, bool passed)
+	void OnPlayerMoveRightChanged()
 	{
-		if(playerIndex >= 0 && playerIndex < rows.Count)
-			rows[playerIndex].IsPassed = passed;
+		RefreshActivePlayers();
+	}
+
+	void RefreshPassStates()
+	{
+		var passStates = Match.PlayerPassStates;
+		for(int i = 0; i < rows.Count; ++i)
+		{
+			bool passed = passStates != null && passStates.TryGetValue(i, out bool value) && value;
+			rows[i].IsPassed = passed;
+		}
+	}
+
+	void OnPassStateChanged()
+	{
+		RefreshPassStates();
 	}
 	#endregion
 }

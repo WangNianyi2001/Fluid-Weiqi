@@ -10,7 +10,7 @@ public class PassTurnButtonUi : MonoBehaviour
 	protected void Awake()
 	{
 		if(Match != null)
-			Match.OnCurrentPlayerChanged += OnCurrentPlayerChanged;
+			Match.OnPlayerMoveRightChanged += OnPlayerMoveRightChanged;
 	}
 
 	protected void Start()
@@ -21,10 +21,10 @@ public class PassTurnButtonUi : MonoBehaviour
 	protected void OnDestroy()
 	{
 		if(Match != null)
-			Match.OnCurrentPlayerChanged -= OnCurrentPlayerChanged;
+			Match.OnPlayerMoveRightChanged -= OnPlayerMoveRightChanged;
 	}
 
-	void OnCurrentPlayerChanged(int _)
+	void OnPlayerMoveRightChanged()
 	{
 		RefreshVisibility();
 	}
@@ -34,7 +34,18 @@ public class PassTurnButtonUi : MonoBehaviour
 		if(PassButtonRoot == null)
 			return;
 
-		bool visible = Match != null && Match.IsCurrentPlayerLocallyControllable;
+		bool visible = false;
+		if(Match != null)
+		{
+			foreach(var entry in Match.PlayerMoveRights)
+			{
+				if(entry.Value && Match.IsPlayerLocallyControllable(entry.Key))
+				{
+					visible = true;
+					break;
+				}
+			}
+		}
 		PassButtonRoot.SetActive(visible);
 	}
 
