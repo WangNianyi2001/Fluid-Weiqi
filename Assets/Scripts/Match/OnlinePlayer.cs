@@ -185,7 +185,7 @@ public class OnlinePlayer : MatchPlayer
 		if(!receivingLocalMove)
 			return;
 		float placementStrength = Match.PlacementStrengthPerPlacement;
-		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Place, position, placementStrength))
+		if(Match.TryApplyPredictedActionAndSendRequest(PlayerIndex, MatchActionType.Place, position, placementStrength))
 		{
 			if(!(Match is TrainingMatch) && !Match.UseContinuousPlacement)
 				receivingLocalMove = false;
@@ -196,7 +196,7 @@ public class OnlinePlayer : MatchPlayer
 	{
 		if(!receivingLocalMove)
 			return;
-		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Remove, position))
+		if(Match.TryApplyPredictedActionAndSendRequest(PlayerIndex, MatchActionType.Remove, position))
 		{
 			if(!Match.UseContinuousPlacement)
 				receivingLocalMove = false;
@@ -207,7 +207,7 @@ public class OnlinePlayer : MatchPlayer
 	{
 		if(!receivingLocalMove)
 			return;
-		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Pass, Vector2.zero))
+		if(Match.TryApplyPredictedActionAndSendRequest(PlayerIndex, MatchActionType.Pass, Vector2.zero))
 		{
 			if(!Match.UseContinuousPlacement)
 				receivingLocalMove = false;

@@ -42,6 +42,18 @@ public abstract class Match : MonoBehaviour
 	int turnSeq;
 	int nextActionSeq = 1;
 	int pendingAuthorityActionSeq;
+	PlayerLocator pendingAuthoritySourceLocator;
+	MatchActionType pendingAuthorityActionType;
+	Vector2 pendingAuthorityActionPosition;
+	float pendingAuthorityActionStrength = 1f;
+	bool hasPendingAuthorityAction;
+
+	MatchActionType lastAcceptedActionType;
+	Vector2 lastAcceptedActionPosition;
+	float lastAcceptedActionStrength = 1f;
+	bool hasLastAcceptedAction;
+
+	readonly HashSet<int> pendingLocalActionSeqs = new();
 	IMatchTransport matchTransport;
 
 	#region Unity life cycle
@@ -224,12 +236,27 @@ public abstract class Match : MonoBehaviour
 		// SetState already refreshes board visuals with the latest state.
 		board.SetState(nextState);
 		board.ClearPreview(false);
+		RecordAcceptedAction(MatchActionType.Place, ActivePlayerIndex, position, activePlacementStrength);
 		onStateChanged?.Invoke();
 	}
 
-	protected virtual void OnRemove(Vector2 position) { }
+	protected virtual void OnRemove(Vector2 position)
+	{
+		RecordAcceptedAction(MatchActionType.Remove, ActivePlayerIndex, position, 1f);
+	}
 
-	protected virtual void OnPass() { }
+	protected virtual void OnPass()
+	{
+		RecordAcceptedAction(MatchActionType.Pass, ActivePlayerIndex, Vector2.zero, 1f);
+	}
+
+	void RecordAcceptedAction(MatchActionType actionType, int playerIndex, Vector2 position, float strength)
+	{
+		hasLastAcceptedAction = true;
+		lastAcceptedActionType = actionType;
+		lastAcceptedActionPosition = position;
+		lastAcceptedActionStrength = Mathf.Max(0.0001f, strength);
+	}
 
 	bool TryPreviewStone(Vector2 position)
 	{
@@ -520,8 +547,9 @@ public abstract class Match : MonoBehaviour
 					{
 						EndMatch();
 						if(ShouldBroadcastAuthorityResult())
-							BroadcastAuthorityResult(true, null, playerIndex, pendingAuthorityActionSeq);
-						pendingAuthorityActionSeq = 0;
+							BroadcastAcceptedAuthorityMessages(playerIndex);
+						ClearPendingAuthorityContext();
+						hasLastAcceptedAction = false;
 						return;
 					}
 					board.SetState(shrunkState);
@@ -530,9 +558,10 @@ public abstract class Match : MonoBehaviour
 		}
 
 		if(ShouldBroadcastAuthorityResult())
-			BroadcastAuthorityResult(true, null, playerIndex, pendingAuthorityActionSeq);
+			BroadcastAcceptedAuthorityMessages(playerIndex);
 
-		pendingAuthorityActionSeq = 0;
+		ClearPendingAuthorityContext();
+		hasLastAcceptedAction = false;
 
 		if(!isEnded && !UseContinuousPlacement)
 			BeginMoveWindow();
@@ -591,27 +620,136 @@ public abstract class Match : MonoBehaviour
 		return Lobby.Current != null && Lobby.Current.IsOnline && Lobby.Current.IsHost && matchTransport != null;
 	}
 
-	void BroadcastAuthorityResult(bool accepted, string reason, int playerIndex, int actionSeq)
+	void SendAuthorityResult(MatchActionResult result, PlayerLocator targetPlayerLocator)
+	{
+		if(!ShouldBroadcastAuthorityResult())
+			return;
+		if(!targetPlayerLocator.IsValid)
+			return;
+
+		matchTransport.SendActionResult(result, targetPlayerLocator);
+	}
+
+	void BroadcastAuthorityResult(MatchActionResult result, PlayerLocator excludedPlayerLocator)
 	{
 		if(!ShouldBroadcastAuthorityResult())
 			return;
 
-		MatchActionResult result = new MatchActionResult
+		matchTransport.BroadcastActionResult(result, excludedPlayerLocator);
+	}
+
+	MatchFlowSnapshot BuildFlowSnapshot()
+	{
+		return new MatchFlowSnapshot
 		{
+			currentPlayerIndex = CurrentPlayerIndex,
+			turnSeq = turnSeq,
+			isEnded = isEnded,
+			passStates = BuildPassStateArray(),
+		};
+	}
+
+	MatchActionResult CreateSnapshotResult(MatchResultKind resultKind, bool accepted, string reason, int playerIndex, int actionSeq)
+	{
+		return new MatchActionResult
+		{
+			resultKind = resultKind,
 			accepted = accepted,
 			reason = reason,
 			playerIndex = playerIndex,
 			actionSeq = actionSeq,
 			boardSnapshot = NetworkSnapshotUtility.BuildBoardSnapshot(Board.Current?.State),
-			flowSnapshot = new MatchFlowSnapshot
-			{
-				currentPlayerIndex = CurrentPlayerIndex,
-				turnSeq = turnSeq,
-				isEnded = isEnded,
-				passStates = BuildPassStateArray(),
-			},
+			flowSnapshot = BuildFlowSnapshot(),
 		};
-		matchTransport.BroadcastActionResult(result);
+	}
+
+	MatchActionResult CreateDeltaResult(int playerIndex)
+	{
+		MatchActionResult result = new MatchActionResult
+		{
+			resultKind = MatchResultKind.DeltaPush,
+			accepted = true,
+			reason = null,
+			playerIndex = playerIndex,
+			actionSeq = pendingAuthorityActionSeq,
+			sourcePlayerLocator = pendingAuthoritySourceLocator,
+			flowSnapshot = BuildFlowSnapshot(),
+		};
+
+		if(hasPendingAuthorityAction)
+		{
+			result.deltaOps.Add(new MatchDeltaOp
+			{
+				opType = pendingAuthorityActionType switch
+				{
+					MatchActionType.Place => MatchDeltaOpType.Place,
+					MatchActionType.Remove => MatchDeltaOpType.Remove,
+					_ => MatchDeltaOpType.Pass,
+				},
+				playerIndex = playerIndex,
+				position = pendingAuthorityActionPosition,
+				strength = Mathf.Max(0.0001f, pendingAuthorityActionStrength),
+			});
+		}
+		else if(hasLastAcceptedAction)
+		{
+			result.deltaOps.Add(new MatchDeltaOp
+			{
+				opType = lastAcceptedActionType switch
+				{
+					MatchActionType.Place => MatchDeltaOpType.Place,
+					MatchActionType.Remove => MatchDeltaOpType.Remove,
+					_ => MatchDeltaOpType.Pass,
+				},
+				playerIndex = playerIndex,
+				position = lastAcceptedActionPosition,
+				strength = Mathf.Max(0.0001f, lastAcceptedActionStrength),
+			});
+		}
+
+		return result;
+	}
+
+	void ClearPendingAuthorityContext()
+	{
+		pendingAuthorityActionSeq = 0;
+		pendingAuthoritySourceLocator = default;
+		pendingAuthorityActionType = MatchActionType.Pass;
+		pendingAuthorityActionPosition = Vector2.zero;
+		pendingAuthorityActionStrength = 1f;
+		hasPendingAuthorityAction = false;
+	}
+
+	void BroadcastAcceptedAuthorityMessages(int playerIndex)
+	{
+		if(!ShouldBroadcastAuthorityResult())
+			return;
+
+		if(hasPendingAuthorityAction && pendingAuthoritySourceLocator.IsValid)
+		{
+			MatchActionResult ack = CreateSnapshotResult(MatchResultKind.ActionAck, true, null, playerIndex, pendingAuthorityActionSeq);
+			ack.targetPlayerLocator = pendingAuthoritySourceLocator;
+			ack.sourcePlayerLocator = pendingAuthoritySourceLocator;
+			ack.boardSnapshot = null;
+			SendAuthorityResult(ack, pendingAuthoritySourceLocator);
+
+			MatchActionResult delta = CreateDeltaResult(playerIndex);
+			BroadcastAuthorityResult(delta, pendingAuthoritySourceLocator);
+			return;
+		}
+
+		MatchActionResult hostDelta = CreateDeltaResult(playerIndex);
+		BroadcastAuthorityResult(hostDelta, default);
+	}
+
+	void SendSnapshotToClient(PlayerLocator targetPlayerLocator)
+	{
+		if(!targetPlayerLocator.IsValid)
+			return;
+
+		MatchActionResult snapshot = CreateSnapshotResult(MatchResultKind.SnapshotPush, true, null, -1, 0);
+		snapshot.targetPlayerLocator = targetPlayerLocator;
+		SendAuthorityResult(snapshot, targetPlayerLocator);
 	}
 
 	bool[] BuildPassStateArray()
@@ -665,44 +803,66 @@ public abstract class Match : MonoBehaviour
 		if(request == null || Lobby.Current == null || !Lobby.Current.IsHost)
 			return;
 
+		if(request.requestKind == MatchRequestKind.SnapshotPull)
+		{
+			SendSnapshotToClient(request.playerLocator);
+			return;
+		}
+
 		int playerIndex = Lobby.Current.Players.FindIndex(p => p != null && p.locator == request.playerLocator);
 		if(playerIndex < 0)
 		{
-			BroadcastAuthorityResult(false, "unknown-player", -1, request.actionSeq);
+			MatchActionResult reject = CreateSnapshotResult(MatchResultKind.ActionReject, false, "unknown-player", -1, request.actionSeq);
+			reject.targetPlayerLocator = request.playerLocator;
+			SendAuthorityResult(reject, request.playerLocator);
 			return;
 		}
 
 		if(!CanPlayerMakeMoveNow(playerIndex))
 		{
-			BroadcastAuthorityResult(false, "not-current-player", playerIndex, request.actionSeq);
+			MatchActionResult reject = CreateSnapshotResult(MatchResultKind.ActionReject, false, "not-current-player", playerIndex, request.actionSeq);
+			reject.targetPlayerLocator = request.playerLocator;
+			SendAuthorityResult(reject, request.playerLocator);
 			return;
 		}
 
 		if(request.turnSeq != turnSeq)
 		{
-			BroadcastAuthorityResult(false, "turn-seq-mismatch", playerIndex, request.actionSeq);
+			MatchActionResult reject = CreateSnapshotResult(MatchResultKind.ActionReject, false, "turn-seq-mismatch", playerIndex, request.actionSeq);
+			reject.targetPlayerLocator = request.playerLocator;
+			SendAuthorityResult(reject, request.playerLocator);
 			return;
 		}
 
 		if(!(players[playerIndex] is OnlinePlayer onlinePlayer))
 		{
-			BroadcastAuthorityResult(false, "player-is-not-online-proxy", playerIndex, request.actionSeq);
+			MatchActionResult reject = CreateSnapshotResult(MatchResultKind.ActionReject, false, "player-is-not-online-proxy", playerIndex, request.actionSeq);
+			reject.targetPlayerLocator = request.playerLocator;
+			SendAuthorityResult(reject, request.playerLocator);
 			return;
 		}
 
 		pendingAuthorityActionSeq = request.actionSeq;
+		pendingAuthoritySourceLocator = request.playerLocator;
+		pendingAuthorityActionType = request.actionType;
+		pendingAuthorityActionPosition = request.position;
+		pendingAuthorityActionStrength = request.strength;
+		hasPendingAuthorityAction = true;
 		bool handled = onlinePlayer.TryHandleRemoteRequest(request);
 		if(!handled)
 		{
-			pendingAuthorityActionSeq = 0;
-			BroadcastAuthorityResult(false, "invalid-action", playerIndex, request.actionSeq);
+			ClearPendingAuthorityContext();
+			MatchActionResult reject = CreateSnapshotResult(MatchResultKind.ActionReject, false, "invalid-action", playerIndex, request.actionSeq);
+			reject.targetPlayerLocator = request.playerLocator;
+			SendAuthorityResult(reject, request.playerLocator);
 			return;
 		}
 
 		if(request.actionType == MatchActionType.Remove)
 		{
-			BroadcastAuthorityResult(true, null, playerIndex, request.actionSeq);
-			pendingAuthorityActionSeq = 0;
+			BroadcastAcceptedAuthorityMessages(playerIndex);
+			ClearPendingAuthorityContext();
+			hasLastAcceptedAction = false;
 		}
 	}
 
@@ -710,44 +870,168 @@ public abstract class Match : MonoBehaviour
 	{
 		if(result == null)
 			return;
+		if(result.targetPlayerLocator.IsValid && Lobby.Current != null && result.targetPlayerLocator != Lobby.Current.LocalPlayerLocator)
+			return;
+
+		switch(result.resultKind)
+		{
+			case MatchResultKind.ActionReject:
+				pendingLocalActionSeqs.Remove(result.actionSeq);
+				RequestLatestSnapshotFromHost();
+				if(!UseContinuousPlacement)
+					BeginMoveWindow();
+				return;
+			case MatchResultKind.ActionAck:
+				pendingLocalActionSeqs.Remove(result.actionSeq);
+				ApplyFlowSnapshot(result.flowSnapshot);
+				return;
+			case MatchResultKind.DeltaPush:
+				ApplyDeltaResult(result);
+				ApplyFlowSnapshot(result.flowSnapshot);
+				return;
+			case MatchResultKind.SnapshotPush:
+				ApplySnapshotResult(result);
+				return;
+		}
 
 		if(result.accepted)
 		{
-			BoardState syncedState = NetworkSnapshotUtility.ToBoardState(result.boardSnapshot);
-			if(Board.Current != null && syncedState != null)
-			{
-				Board.Current.SetState(syncedState);
-				onStateChanged?.Invoke();
-			}
-
-			if(result.flowSnapshot != null)
-			{
-				turnSeq = result.flowSnapshot.turnSeq;
-				CurrentPlayerIndex = result.flowSnapshot.currentPlayerIndex;
-				bool[] passStates = result.flowSnapshot.passStates;
-				if(passStates != null)
-				{
-					for(int i = 0; i < PlayerCount; ++i)
-						SetPlayerPassState(i, i < passStates.Length && passStates[i]);
-				}
-
-				if(result.flowSnapshot.isEnded && !isEnded)
-				{
-					isEnded = true;
-					CancelAllPlayers();
-					onEnd?.Invoke();
-				}
-				else if(!result.flowSnapshot.isEnded && !isEnded && !UseContinuousPlacement)
-				{
-					BeginMoveWindow();
-				}
-			}
+			ApplySnapshotResult(result);
 		}
 		else
 		{
+			pendingLocalActionSeqs.Remove(result.actionSeq);
+			RequestLatestSnapshotFromHost();
 			if(!UseContinuousPlacement)
 				BeginMoveWindow();
 		}
+	}
+
+	void ApplyDeltaResult(MatchActionResult result)
+	{
+		if(Board.Current == null || result.deltaOps == null || result.deltaOps.Count == 0)
+			return;
+
+		for(int i = 0; i < result.deltaOps.Count; ++i)
+		{
+			MatchDeltaOp op = result.deltaOps[i];
+			switch(op.opType)
+			{
+				case MatchDeltaOpType.Place:
+					ReceivePlace(op.playerIndex, op.position, op.strength);
+					break;
+				case MatchDeltaOpType.Remove:
+					ReceiveRemove(op.playerIndex, op.position);
+					break;
+				case MatchDeltaOpType.Pass:
+					ReceivePass(op.playerIndex);
+					break;
+			}
+		}
+
+		onStateChanged?.Invoke();
+	}
+
+	void ApplySnapshotResult(MatchActionResult result)
+	{
+		BoardState syncedState = NetworkSnapshotUtility.ToBoardState(result.boardSnapshot);
+		if(Board.Current != null && syncedState != null)
+		{
+			Board.Current.SetState(syncedState);
+			onStateChanged?.Invoke();
+		}
+
+		ApplyFlowSnapshot(result.flowSnapshot);
+		pendingLocalActionSeqs.Clear();
+	}
+
+	void ApplyFlowSnapshot(MatchFlowSnapshot flowSnapshot)
+	{
+		if(flowSnapshot == null)
+			return;
+
+		turnSeq = flowSnapshot.turnSeq;
+		CurrentPlayerIndex = flowSnapshot.currentPlayerIndex;
+		bool[] passStates = flowSnapshot.passStates;
+		if(passStates != null)
+		{
+			for(int i = 0; i < PlayerCount; ++i)
+				SetPlayerPassState(i, i < passStates.Length && passStates[i]);
+		}
+
+		if(flowSnapshot.isEnded && !isEnded)
+		{
+			isEnded = true;
+			CancelAllPlayers();
+			onEnd?.Invoke();
+		}
+		else if(!flowSnapshot.isEnded && !isEnded && !UseContinuousPlacement)
+		{
+			BeginMoveWindow();
+		}
+	}
+
+	public bool RequestLatestSnapshotFromHost()
+	{
+		if(Lobby.Current == null || !Lobby.Current.IsOnline || Lobby.Current.IsHost)
+			return false;
+		if(GameManager.Instance == null || GameManager.Instance.MatchTransport == null)
+			return false;
+
+		MatchActionRequest request = new MatchActionRequest
+		{
+			requestKind = MatchRequestKind.SnapshotPull,
+			playerLocator = Lobby.Current.LocalPlayerLocator,
+			playerIndex = -1,
+			actionType = MatchActionType.Pass,
+			position = Vector2.zero,
+			strength = 1f,
+			turnSeq = turnSeq,
+			actionSeq = nextActionSeq++,
+		};
+		GameManager.Instance.MatchTransport.SendActionRequest(request);
+		return true;
+	}
+
+	public bool TryApplyPredictedActionAndSendRequest(int playerIndex, MatchActionType actionType, Vector2 position, float strength = 1f)
+	{
+		if(Lobby.Current == null || !Lobby.Current.IsOnline || Lobby.Current.IsHost)
+			return false;
+		if(GameManager.Instance == null || GameManager.Instance.MatchTransport == null)
+			return false;
+		if(playerIndex < 0 || playerIndex >= Lobby.Current.Players.Count)
+			return false;
+
+		bool applied = actionType switch
+		{
+			MatchActionType.Place => ReceivePlace(playerIndex, position, strength),
+			MatchActionType.Pass => true,
+			MatchActionType.Remove => true,
+			_ => false,
+		};
+		if(!applied)
+			return false;
+
+		if(actionType == MatchActionType.Pass)
+			ReceivePass(playerIndex);
+		else if(actionType == MatchActionType.Remove)
+			ReceiveRemove(playerIndex, position);
+
+		int actionSeq = nextActionSeq++;
+		MatchActionRequest request = new MatchActionRequest
+		{
+			requestKind = MatchRequestKind.Action,
+			playerLocator = Lobby.Current.Players[playerIndex].locator,
+			playerIndex = playerIndex,
+			actionType = actionType,
+			position = position,
+			strength = strength,
+			turnSeq = turnSeq,
+			actionSeq = actionSeq,
+		};
+		GameManager.Instance.MatchTransport.SendActionRequest(request);
+		pendingLocalActionSeqs.Add(actionSeq);
+		return true;
 	}
 
 	public bool TrySendPlayerActionRequest(int playerIndex, MatchActionType actionType, Vector2 position, float strength = 1f)
@@ -761,6 +1045,7 @@ public abstract class Match : MonoBehaviour
 
 		MatchActionRequest request = new MatchActionRequest
 		{
+			requestKind = MatchRequestKind.Action,
 			playerLocator = Lobby.Current.Players[playerIndex].locator,
 			playerIndex = playerIndex,
 			actionType = actionType,
