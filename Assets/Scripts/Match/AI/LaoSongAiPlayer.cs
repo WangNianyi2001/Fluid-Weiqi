@@ -9,8 +9,8 @@ public class LaoSongAiPlayer : AiPlayer
 	bool brushIsDown;
 	bool hasLastPlacement;
 	Vector2 lastPlacement;
+	float lastPlacementTime = -1f;
 	float penLiftCooldownUntil = -1f;
-	float continuousDecisionTimestamp = -1f;
 
 	public void Initialize(Match match, int playerIndex, MatchRule rule, LaoSongAiConfig config)
 	{
@@ -90,6 +90,10 @@ public class LaoSongAiPlayer : AiPlayer
 			return;
 
 		float now = Time.time;
+		float minInterval = laoSongConfig != null ? laoSongConfig.PaintingModeMinPlacementInterval : 0f;
+		if(lastPlacementTime >= 0f && now - lastPlacementTime < minInterval)
+			return;
+
 		if(now < penLiftCooldownUntil)
 			return;
 
@@ -118,10 +122,7 @@ public class LaoSongAiPlayer : AiPlayer
 		if(!hasLastPlacement || Board.Current == null)
 			return false;
 
-		float elapsed = GetElapsedSince(ref continuousDecisionTimestamp);
-		float stepDuration = Mathf.Max(0f, GetContinuousStepDuration());
-		if(elapsed <= 0f)
-			elapsed = stepDuration;
+		float elapsed = lastPlacementTime < 0f ? GetContinuousStepDuration() : Mathf.Max(0f, Time.time - lastPlacementTime);
 
 		float maxMoveRate = laoSongConfig != null ? laoSongConfig.PaintingModeMaxMoveRate : 0f;
 		float radius = Mathf.Max(0f, maxMoveRate * elapsed);
@@ -142,18 +143,35 @@ public class LaoSongAiPlayer : AiPlayer
 				return false;
 
 			Vector2 candidate = Board.Current.NormalizeAbsolutePosition(sampler(state));
+			if(ShouldAvoidOwnedTerritoryPlacement(state, candidate))
+				continue;
+
 			if(!Match.ReceivePlace(PlayerIndex, candidate, placementStrength))
 				continue;
 
 			brushIsDown = true;
 			hasLastPlacement = true;
 			lastPlacement = candidate;
-			continuousDecisionTimestamp = Time.time;
+			lastPlacementTime = Time.time;
 			NotifyMadeMove();
 			return true;
 		}
 
 		return false;
+	}
+
+	bool ShouldAvoidOwnedTerritoryPlacement(BoardState state, Vector2 candidate)
+	{
+		if(state == null || Board.Current == null || Board.Current.Caches == null)
+			return false;
+		if(!IsContinuousMode)
+			return false;
+		if(!TryGetModeConfig(out MatchModeConfig modeConfig) || modeConfig.IsTurnBased)
+			return false;
+		if(!BoardUtility.IsOccupiedAtAbsolutePosition(Board.Current.Caches, state, candidate))
+			return false;
+
+		return BoardUtility.GetTerritoryOwnerAtAbsolutePosition(Board.Current.Caches, state, candidate) == PlayerIndex;
 	}
 
 	void LiftPen(float now)
@@ -168,7 +186,7 @@ public class LaoSongAiPlayer : AiPlayer
 		brushIsDown = false;
 		hasLastPlacement = false;
 		lastPlacement = Vector2.zero;
+		lastPlacementTime = -1f;
 		penLiftCooldownUntil = -1f;
-		continuousDecisionTimestamp = -1f;
 	}
 }

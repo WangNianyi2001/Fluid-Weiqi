@@ -16,5 +16,6 @@ MonoBehaviour:
   aiName: "\u7262\u5B8B"
   maxRollCount: 3
   turnBasedModeDelay: 0.5
-  paintingModeMaxMoveRate: 4
-  paintingModePenLiftDelay: 0.35
+  paintingModeMaxMoveRate: 8
+  paintingModeMinPlacementInterval: 0.1
+  paintingModePenLiftDelay: 1

@@ -7,10 +7,12 @@ public class LaoSongAiConfig : AiConfig<LaoSongAiConfig>
 	[SerializeField] int maxRollCount = 3;
 	[SerializeField] float turnBasedModeDelay = 0.5f;
 	[SerializeField] float paintingModeMaxMoveRate = 4f;
+	[SerializeField] float paintingModeMinPlacementInterval = 0.08f;
 	[SerializeField] float paintingModePenLiftDelay = 0.35f;
 	public int MaxRollCount => Mathf.Max(1, maxRollCount);
 	public float TurnBasedModeDelay => Mathf.Max(0f, turnBasedModeDelay);
 	public float PaintingModeMaxMoveRate => Mathf.Max(0f, paintingModeMaxMoveRate);
+	public float PaintingModeMinPlacementInterval => Mathf.Max(0f, paintingModeMinPlacementInterval);
 	public float PaintingModePenLiftDelay => Mathf.Max(0f, paintingModePenLiftDelay);
 
 	public override IEnumerable<string> EnumerateSupportedModeIds()
