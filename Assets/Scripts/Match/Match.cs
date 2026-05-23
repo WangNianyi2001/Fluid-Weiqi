@@ -133,14 +133,29 @@ public abstract class Match : MonoBehaviour
 		OnCursorEnter(position);
 	}
 
+	public void ReceiveCursorEnter(int playerIndex, Vector2 position)
+	{
+		ExecuteAsPlayer(playerIndex, PlacementStrengthPerPlacement, () => OnCursorEnter(position));
+	}
+
 	public void ReceiveCursorMove(Vector2 position)
 	{
 		OnCursorMove(position);
 	}
 
+	public void ReceiveCursorMove(int playerIndex, Vector2 position)
+	{
+		ExecuteAsPlayer(playerIndex, PlacementStrengthPerPlacement, () => OnCursorMove(position));
+	}
+
 	public void ReceiveCursorExit()
 	{
 		OnCursorExit();
+	}
+
+	public void ReceiveCursorExit(int playerIndex)
+	{
+		ExecuteAsPlayer(playerIndex, PlacementStrengthPerPlacement, OnCursorExit);
 	}
 
 	public bool ReceivePlace(Vector2 position)
@@ -265,10 +280,11 @@ public abstract class Match : MonoBehaviour
 			return false;
 
 		BoardState state = board.State;
+		int previewPlayerIndex = ActivePlayerIndex;
 
 		if(IsOccupiedAtAbsolutePosition(board, state, position))
 		{
-			if(!UseContinuousPlacement || BoardUtility.GetTerritoryOwnerAtAbsolutePosition(board.Caches, state, position) != currentPlayerIndex)
+			if(!UseContinuousPlacement || BoardUtility.GetTerritoryOwnerAtAbsolutePosition(board.Caches, state, position) != previewPlayerIndex)
 			{
 				board.ClearPreview();
 				return false;
@@ -285,7 +301,7 @@ public abstract class Match : MonoBehaviour
 		}
 
 		BoardState previewState = new(state);
-		previewState.AddStone(currentPlayerIndex, position, PlacementStrengthPerPlacement);
+		previewState.AddStone(previewPlayerIndex, position, activePlacementStrength);
 		board.ShowPreview(previewState);
 		return true;
 	}

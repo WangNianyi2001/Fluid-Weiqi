@@ -67,7 +67,7 @@ public class OnlinePlayer : MatchPlayer
 
 			receivingLocalMove = canMove;
 			if(!canMove || !isConnected)
-				Match.ReceiveCursorExit();
+				Match.ReceiveCursorExit(PlayerIndex);
 		}
 	}
 
@@ -90,7 +90,7 @@ public class OnlinePlayer : MatchPlayer
 			autoPassCoroutine = StartCoroutine(AutoPassAsync());
 
 		if(receivingLocalMove && !alive)
-			Match.ReceiveCursorExit();
+			Match.ReceiveCursorExit(PlayerIndex);
 	}
 
 	IEnumerator AutoPassAsync()
@@ -163,21 +163,21 @@ public class OnlinePlayer : MatchPlayer
 	{
 		if(!receivingLocalMove)
 			return;
-		Match.ReceiveCursorEnter(position);
+		Match.ReceiveCursorEnter(PlayerIndex, position);
 	}
 
 	void OnCursorMove(Vector2 position)
 	{
 		if(!receivingLocalMove)
 			return;
-		Match.ReceiveCursorMove(position);
+		Match.ReceiveCursorMove(PlayerIndex, position);
 	}
 
 	void OnCursorExit()
 	{
 		if(!receivingLocalMove)
 			return;
-		Match.ReceiveCursorExit();
+		Match.ReceiveCursorExit(PlayerIndex);
 	}
 
 	void OnPlace(Vector2 position)
