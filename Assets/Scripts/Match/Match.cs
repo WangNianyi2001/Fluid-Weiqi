@@ -470,16 +470,20 @@ public abstract class Match : MonoBehaviour
 			Board board = Board.Current;
 			if(board != null)
 			{
-				BoardState shrunkState = board.TryShrink(board.State, Rule.shrinkSpeed);
-				if(shrunkState == null)
+				float shrinkDeltaMargin = GetShrinkDeltaMarginForAcceptedMove();
+				if(shrinkDeltaMargin > 0f)
 				{
-					EndMatch();
-					if(ShouldBroadcastAuthorityResult())
-						BroadcastAuthorityResult(true, null, playerIndex, pendingAuthorityActionSeq);
-					pendingAuthorityActionSeq = 0;
-					return;
+					BoardState shrunkState = board.TryShrink(board.State, shrinkDeltaMargin);
+					if(shrunkState == null)
+					{
+						EndMatch();
+						if(ShouldBroadcastAuthorityResult())
+							BroadcastAuthorityResult(true, null, playerIndex, pendingAuthorityActionSeq);
+						pendingAuthorityActionSeq = 0;
+						return;
+					}
+					board.SetState(shrunkState);
 				}
-				board.SetState(shrunkState);
 			}
 		}
 
@@ -510,6 +514,15 @@ public abstract class Match : MonoBehaviour
 		IncrementTurnSequence();
 		if(!isEnded)
 			StepPlayerIndex();
+	}
+
+	/// <summary>
+	/// Returns the board-margin shrink amount to apply after an accepted move.
+	/// Default behavior keeps the legacy per-move interpretation.
+	/// </summary>
+	protected virtual float GetShrinkDeltaMarginForAcceptedMove()
+	{
+		return Mathf.Max(0f, Rule.shrinkSpeed);
 	}
 
 	/// <summary>
