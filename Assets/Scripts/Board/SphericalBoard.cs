@@ -55,7 +55,7 @@ public class SphericalBoard : Board
 
 		float longitudeRatio = nextSize / currentSize;
 		float latitudeRatio = nextSize / currentSize;
-		float nextLatitudeMax = nextSize - 1f;
+		float nextLatitudeMax = Mathf.Max(0f, nextSize - 1e-4f);
 
 		// Keep angular locations stable while switching to the smaller index domain.
 		for(int player = nextState.PlayerCount - 1; player >= 0; --player)
