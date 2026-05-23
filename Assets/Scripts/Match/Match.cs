@@ -210,7 +210,7 @@ public abstract class Match : MonoBehaviour
 		AnalyzeState(currentState);
 
 		LastPlacementSucceed = BoardUtility.TryPlaceStoneStandard(
-			board.Caches, currentState, ActivePlayerIndex, position, out BoardState nextState, activePlacementStrength);
+			board.Caches, currentState, ActivePlayerIndex, position, out BoardState nextState, activePlacementStrength, UseContinuousPlacement);
 		if(!LastPlacementSucceed)
 			return;
 
@@ -241,8 +241,11 @@ public abstract class Match : MonoBehaviour
 
 		if(IsOccupiedAtAbsolutePosition(board, state, position))
 		{
-			board.ClearPreview();
-			return false;
+			if(!UseContinuousPlacement || BoardUtility.GetTerritoryOwnerAtAbsolutePosition(board.Caches, state, position) != currentPlayerIndex)
+			{
+				board.ClearPreview();
+				return false;
+			}
 		}
 
 		if(position.x < 0 || position.x >= state.Size || position.y < 0 || position.y >= state.Size)
@@ -255,7 +258,7 @@ public abstract class Match : MonoBehaviour
 		}
 
 		BoardState previewState = new(state);
-		previewState.AddStone(currentPlayerIndex, position);
+		previewState.AddStone(currentPlayerIndex, position, PlacementStrengthPerPlacement);
 		board.ShowPreview(previewState);
 		return true;
 	}

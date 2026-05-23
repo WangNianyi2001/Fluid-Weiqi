@@ -289,7 +289,8 @@ public static class BoardUtility
 		int player,
 		Vector2 position,
 		out BoardState newState,
-		float strength = 1)
+		float strength = 1,
+		bool allowOccupiedOwnedTerritory = false)
 	{
 		newState = null;
 		if(player < 0 || player >= state.PlayerCount) return false;
@@ -306,7 +307,15 @@ public static class BoardUtility
 			if(position.x < 0 || position.x >= state.Size || position.y < 0 || position.y >= state.Size) return false;
 		}
 
-		if(IsOccupiedAtAbsolutePosition(c, state, position)) return false;
+		if(IsOccupiedAtAbsolutePosition(c, state, position))
+		{
+			if(!allowOccupiedOwnedTerritory)
+				return false;
+
+			int territoryOwner = GetTerritoryOwnerAtAbsolutePosition(c, state, position);
+			if(territoryOwner != player)
+				return false;
+		}
 
 		BoardState previewState = new(state);
 		previewState.AddStone(player, position, strength);
@@ -335,6 +344,20 @@ public static class BoardUtility
 
 		newState = previewState;
 		return true;
+	}
+
+	public static int GetTerritoryOwnerAtAbsolutePosition(BoardCaches c, BoardState renderState, Vector2 absolutePosition)
+	{
+		if(!c.isInitialized || c.ownerBuffer == null || renderState == null)
+			return -1;
+		if(!TryEnsureOwnerDataCache(c))
+			return -1;
+
+		int pixelIndex = AbsolutePositionToPixelIndex(c, renderState, absolutePosition);
+		if(pixelIndex < 0)
+			return -1;
+
+		return c.ownerDataCache[pixelIndex];
 	}
 
 	#endregion
