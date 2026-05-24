@@ -54,7 +54,21 @@ public abstract class Match : MonoBehaviour
 	bool hasLastAcceptedAction;
 
 	readonly HashSet<int> pendingLocalActionSeqs = new();
+	readonly List<PendingLocalAction> pendingLocalActions = new();
+	BoardStateSnapshot lastResolvedBoardSnapshot;
+	MatchFlowSnapshot lastResolvedFlowSnapshot;
 	IMatchTransport matchTransport;
+
+	const int MaxPendingLocalActions = 64;
+
+	struct PendingLocalAction
+	{
+		public int actionSeq;
+		public int playerIndex;
+		public MatchActionType actionType;
+		public Vector2 position;
+		public float strength;
+	}
 
 	#region Unity life cycle
 	protected void Awake()
@@ -68,6 +82,7 @@ public abstract class Match : MonoBehaviour
 		InitializePlayers();
 		CurrentPlayerIndex = 0;
 		BeginMoveWindow();
+		CaptureResolvedSnapshotFromCurrentState();
 		InitializeNetworkTransport();
 	}
 
@@ -893,17 +908,22 @@ public abstract class Match : MonoBehaviour
 		{
 			case MatchResultKind.ActionReject:
 				pendingLocalActionSeqs.Remove(result.actionSeq);
+				pendingLocalActions.Clear();
+				RestoreResolvedSnapshotLocally();
 				RequestLatestSnapshotFromHost();
 				if(!UseContinuousPlacement)
 					BeginMoveWindow();
 				return;
 			case MatchResultKind.ActionAck:
 				pendingLocalActionSeqs.Remove(result.actionSeq);
+				RemovePendingLocalActionBySequence(result.actionSeq);
 				ApplyFlowSnapshot(result.flowSnapshot);
 				return;
 			case MatchResultKind.DeltaPush:
 				ApplyDeltaResult(result);
 				ApplyFlowSnapshot(result.flowSnapshot);
+				if(pendingLocalActions.Count == 0)
+					CaptureResolvedSnapshotFromCurrentState();
 				return;
 			case MatchResultKind.SnapshotPush:
 				ApplySnapshotResult(result);
@@ -917,6 +937,8 @@ public abstract class Match : MonoBehaviour
 		else
 		{
 			pendingLocalActionSeqs.Remove(result.actionSeq);
+			pendingLocalActions.Clear();
+			RestoreResolvedSnapshotLocally();
 			RequestLatestSnapshotFromHost();
 			if(!UseContinuousPlacement)
 				BeginMoveWindow();
@@ -959,6 +981,8 @@ public abstract class Match : MonoBehaviour
 
 		ApplyFlowSnapshot(result.flowSnapshot);
 		pendingLocalActionSeqs.Clear();
+		pendingLocalActions.Clear();
+		CaptureResolvedSnapshotFromCurrentState();
 	}
 
 	void ApplyFlowSnapshot(MatchFlowSnapshot flowSnapshot)
@@ -1017,6 +1041,10 @@ public abstract class Match : MonoBehaviour
 			return false;
 		if(playerIndex < 0 || playerIndex >= Lobby.Current.Players.Count)
 			return false;
+		if(pendingLocalActions.Count >= MaxPendingLocalActions)
+			return false;
+		if(pendingLocalActions.Count == 0)
+			CaptureResolvedSnapshotFromCurrentState();
 
 		bool applied = actionType switch
 		{
@@ -1047,7 +1075,47 @@ public abstract class Match : MonoBehaviour
 		};
 		GameManager.Instance.MatchTransport.SendActionRequest(request);
 		pendingLocalActionSeqs.Add(actionSeq);
+		pendingLocalActions.Add(new PendingLocalAction
+		{
+			actionSeq = actionSeq,
+			playerIndex = playerIndex,
+			actionType = actionType,
+			position = position,
+			strength = Mathf.Max(0.0001f, strength),
+		});
 		return true;
+	}
+
+	void CaptureResolvedSnapshotFromCurrentState()
+	{
+		lastResolvedBoardSnapshot = NetworkSnapshotUtility.BuildBoardSnapshot(Board.Current?.State);
+		lastResolvedFlowSnapshot = BuildFlowSnapshot();
+	}
+
+	void RemovePendingLocalActionBySequence(int actionSeq)
+	{
+		for(int i = pendingLocalActions.Count - 1; i >= 0; --i)
+		{
+			if(pendingLocalActions[i].actionSeq <= actionSeq)
+				pendingLocalActions.RemoveAt(i);
+		}
+
+		if(pendingLocalActions.Count == 0)
+			CaptureResolvedSnapshotFromCurrentState();
+	}
+
+	void RestoreResolvedSnapshotLocally()
+	{
+		if(lastResolvedBoardSnapshot == null || Board.Current == null)
+			return;
+
+		BoardState resolvedState = NetworkSnapshotUtility.ToBoardState(lastResolvedBoardSnapshot);
+		if(resolvedState == null)
+			return;
+
+		Board.Current.SetState(resolvedState);
+		ApplyFlowSnapshot(lastResolvedFlowSnapshot);
+		onStateChanged?.Invoke();
 	}
 
 	public bool TrySendPlayerActionRequest(int playerIndex, MatchActionType actionType, Vector2 position, float strength = 1f)
