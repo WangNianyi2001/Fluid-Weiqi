@@ -32,6 +32,8 @@ public class OnlinePlayer : MatchPlayer
 			input.OnCursorEnter += OnCursorEnter;
 			input.OnCursorMove += OnCursorMove;
 			input.OnCursorExit += OnCursorExit;
+			input.OnPrimaryDown += OnPrimaryDown;
+			input.OnPrimaryUp += OnPrimaryUp;
 			input.OnPlace += OnPlace;
 			input.OnRemove += OnRemove;
 			input.OnPass += OnPass;
@@ -67,6 +69,9 @@ public class OnlinePlayer : MatchPlayer
 
 			receivingLocalMove = canMove;
 			if(!canMove || !isConnected)
+				EndBrushStrokeSfx();
+
+			if(!canMove || !isConnected)
 				Match.ReceiveCursorExit(PlayerIndex);
 		}
 	}
@@ -88,6 +93,9 @@ public class OnlinePlayer : MatchPlayer
 
 		if(wasConnected && !isConnected && waitingForRemoteAction && autoPassCoroutine == null)
 			autoPassCoroutine = StartCoroutine(AutoPassAsync());
+
+		if(receivingLocalMove && !alive)
+			EndBrushStrokeSfx();
 
 		if(receivingLocalMove && !alive)
 			Match.ReceiveCursorExit(PlayerIndex);
@@ -154,9 +162,30 @@ public class OnlinePlayer : MatchPlayer
 		input.OnCursorEnter -= OnCursorEnter;
 		input.OnCursorMove -= OnCursorMove;
 		input.OnCursorExit -= OnCursorExit;
+		input.OnPrimaryDown -= OnPrimaryDown;
+		input.OnPrimaryUp -= OnPrimaryUp;
 		input.OnPlace -= OnPlace;
 		input.OnRemove -= OnRemove;
 		input.OnPass -= OnPass;
+	}
+
+	void OnPrimaryDown()
+	{
+		if(!receivingLocalMove || !Match.UseContinuousPlacement)
+			return;
+		AudioManager.Instance?.BeginBrushStroke();
+	}
+
+	void OnPrimaryUp()
+	{
+		if(!Match.UseContinuousPlacement)
+			return;
+		EndBrushStrokeSfx();
+	}
+
+	void EndBrushStrokeSfx()
+	{
+		AudioManager.Instance?.EndBrushStroke();
 	}
 
 	void OnCursorEnter(Vector2 position)

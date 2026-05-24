@@ -35,3 +35,17 @@ MonoBehaviour:
     color: {r: 0, g: 0, b: 1, a: 1}
   - name: "\u9EC4"
     color: {r: 1, g: 1, b: 0, a: 1}
+  placeSoundClip: {fileID: 8300000, guid: 753c69577c4d95b49bc03848b22cf254, type: 3}
+  captureSoundClip: {fileID: 8300000, guid: e57407e7ab051a14687c99a7846024bf, type: 3}
+  skipSoundClip: {fileID: 8300000, guid: 945675095e8575e40a02ea6e17c2f64c, type: 3}
+  clickSoundClip: {fileID: 8300000, guid: c9a4e729f7904784f95ccf71a79cde8c, type: 3}
+  brushDownSoundClip: {fileID: 8300000, guid: c9a4e729f7904784f95ccf71a79cde8c, type: 3}
+  brushMoveSoundClips:
+  - {fileID: 8300000, guid: 753c69577c4d95b49bc03848b22cf254, type: 3}
+  brushUpSoundClip: {fileID: 0}
+  brushMoveFrequencyPerSecond: 6
+  brushMoveIntervalJitter: 0.25
+  brushDownVolume: 1
+  brushMoveVolume: 0.8
+  brushUpVolume: 1
+  brushMovePitchVariance: 0.08

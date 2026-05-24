@@ -35,6 +35,8 @@ public class MatchInput : MonoBehaviour
 	public event Action<Vector2> OnRemove;
 	public event Action OnPass;
 	public event Action<Vector2> OnRotateDrag;
+	public event Action OnPrimaryDown;
+	public event Action OnPrimaryUp;
 
 	public void SubmitPass()
 	{
@@ -124,6 +126,7 @@ public class MatchInput : MonoBehaviour
 		if(!isPrimaryDown)
 		{
 			isPrimaryDown = true;
+			OnPrimaryDown?.Invoke();
 			EmitPlace(absolutePosition);
 
 			float frequency = GetPlacementFrequencyPerSecond();
@@ -150,6 +153,8 @@ public class MatchInput : MonoBehaviour
 
 	void ResetPrimaryState()
 	{
+		if(isPrimaryDown)
+			OnPrimaryUp?.Invoke();
 		isPrimaryDown = false;
 		nextPrimaryPlaceTime = 0f;
 	}

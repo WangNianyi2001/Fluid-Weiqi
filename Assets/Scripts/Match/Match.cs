@@ -256,7 +256,7 @@ public abstract class Match : MonoBehaviour
 		if(!LastPlacementSucceed)
 			return;
 
-		if(AudioManager.Instance != null)
+		if(AudioManager.Instance != null && !UseContinuousPlacement)
 			AudioManager.Instance.PlayPlaceStoneSound();
 
 		int capturedStoneCount = CountCapturedStones(currentState, nextState, ActivePlayerIndex);

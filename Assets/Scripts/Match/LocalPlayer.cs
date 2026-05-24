@@ -17,6 +17,8 @@ public class LocalPlayer : MatchPlayer
 		input.OnCursorEnter += OnCursorEnter;
 		input.OnCursorMove += OnCursorMove;
 		input.OnCursorExit += OnCursorExit;
+		input.OnPrimaryDown += OnPrimaryDown;
+		input.OnPrimaryUp += OnPrimaryUp;
 		// OnPlace/OnRemove/OnPass are subscribed only while it's this player's turn,
 		// so at most one LocalPlayer is subscribed at any given time.
 	}
@@ -38,6 +40,7 @@ public class LocalPlayer : MatchPlayer
 			input.OnPlace -= OnPlace;
 			input.OnRemove -= OnRemove;
 			input.OnPass -= OnPass;
+			EndBrushStrokeSfx();
 			Match.ReceiveCursorExit();
 		}
 	}
@@ -50,9 +53,30 @@ public class LocalPlayer : MatchPlayer
 		input.OnCursorEnter -= OnCursorEnter;
 		input.OnCursorMove -= OnCursorMove;
 		input.OnCursorExit -= OnCursorExit;
+		input.OnPrimaryDown -= OnPrimaryDown;
+		input.OnPrimaryUp -= OnPrimaryUp;
 		input.OnPlace -= OnPlace;
 		input.OnRemove -= OnRemove;
 		input.OnPass -= OnPass;
+	}
+
+	void OnPrimaryDown()
+	{
+		if(!receivingMove || !Match.UseContinuousPlacement)
+			return;
+		AudioManager.Instance?.BeginBrushStroke();
+	}
+
+	void OnPrimaryUp()
+	{
+		if(!Match.UseContinuousPlacement)
+			return;
+		EndBrushStrokeSfx();
+	}
+
+	void EndBrushStrokeSfx()
+	{
+		AudioManager.Instance?.EndBrushStroke();
 	}
 
 	void OnCursorEnter(Vector2 position)
