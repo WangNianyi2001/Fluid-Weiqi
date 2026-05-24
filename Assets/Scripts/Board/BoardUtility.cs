@@ -289,8 +289,7 @@ public static class BoardUtility
 		int player,
 		Vector2 position,
 		out BoardState newState,
-		float strength = 1,
-		bool allowOccupiedOwnedTerritory = false)
+		float strength = 1)
 	{
 		newState = null;
 		if(player < 0 || player >= state.PlayerCount) return false;
@@ -308,14 +307,7 @@ public static class BoardUtility
 		}
 
 		if(IsOccupiedAtAbsolutePosition(c, state, position))
-		{
-			if(!allowOccupiedOwnedTerritory)
-				return false;
-
-			int territoryOwner = GetTerritoryOwnerAtAbsolutePosition(c, state, position);
-			if(territoryOwner != player)
-				return false;
-		}
+			return false;
 
 		BoardState previewState = new(state);
 		previewState.AddStone(player, position, strength);
