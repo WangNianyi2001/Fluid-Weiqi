@@ -7,7 +7,15 @@ public class TraditionalMatch : Match
 
 	public override int GetCurrentTurnNumber()
 	{
-		return TurnSequence / Mathf.Max(1, PlayerCount) + 1;
+		BoardState state = Board.Current?.State;
+		if(state == null)
+			return 1;
+
+		int totalStoneCount = 0;
+		for(int i = 0; i < state.PlayerCount; ++i)
+			totalStoneCount += state.GetStones(i).Count;
+
+		return totalStoneCount / Mathf.Max(1, PlayerCount) + 1;
 	}
 
 	#region Input

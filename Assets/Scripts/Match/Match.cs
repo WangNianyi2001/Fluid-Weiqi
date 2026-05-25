@@ -57,7 +57,6 @@ public abstract class Match : MonoBehaviour
 	readonly Dictionary<int, bool> playerScoringRequestStates = new();
 	readonly Dictionary<int, bool> playerResignedStates = new();
 	readonly Dictionary<int, bool> playerMoveRights = new();
-	int turnSeq;
 	int nextActionSeq = 1;
 	int pendingAuthorityActionSeq;
 	PlayerLocator pendingAuthoritySourceLocator;
@@ -559,7 +558,6 @@ public abstract class Match : MonoBehaviour
 		return players[playerIndex].CanReceiveLocalInput;
 	}
 
-	protected int TurnSequence => turnSeq;
 	public virtual bool UseContinuousPlacement => false;
 	public virtual bool SupportsPassAction => !UseContinuousPlacement;
 	public virtual bool SupportsRequestScoringAction => false;
@@ -756,11 +754,6 @@ public abstract class Match : MonoBehaviour
 		CurrentPlayerIndex = (CurrentPlayerIndex + 1) % PlayerCount;
 	}
 
-	protected void IncrementTurnSequence()
-	{
-		turnSeq += 1;
-	}
-
 	public bool CanPlayerMove(int playerIndex)
 	{
 		if(playerIndex < 0)
@@ -935,7 +928,6 @@ public abstract class Match : MonoBehaviour
 	/// </summary>
 	protected virtual void OnPlayerMoveAccepted(int playerIndex)
 	{
-		IncrementTurnSequence();
 		if(!isEnded)
 			StepPlayerIndex();
 	}
@@ -996,7 +988,6 @@ public abstract class Match : MonoBehaviour
 		return new MatchFlowSnapshot
 		{
 			currentPlayerIndex = CurrentPlayerIndex,
-			turnSeq = turnSeq,
 			isEnded = isEnded,
 			passStates = BuildPassStateArray(),
 			scoringRequestStates = BuildScoringRequestStateArray(),
@@ -1207,14 +1198,6 @@ public abstract class Match : MonoBehaviour
 			return;
 		}
 
-		if(IsMoveWindowBoundAction(request.actionType) && request.turnSeq != turnSeq)
-		{
-			MatchActionResult reject = CreateSnapshotResult(MatchResultKind.ActionReject, false, "turn-seq-mismatch", playerIndex, request.actionSeq);
-			reject.targetPlayerLocator = request.playerLocator;
-			SendAuthorityResult(reject, request.playerLocator);
-			return;
-		}
-
 		if(!(players[playerIndex] is OnlinePlayer onlinePlayer))
 		{
 			MatchActionResult reject = CreateSnapshotResult(MatchResultKind.ActionReject, false, "player-is-not-online-proxy", playerIndex, request.actionSeq);
@@ -1249,7 +1232,13 @@ public abstract class Match : MonoBehaviour
 
 	bool IsMoveWindowBoundAction(MatchActionType actionType)
 	{
-		return actionType == MatchActionType.Place || actionType == MatchActionType.Pass;
+		if(actionType == MatchActionType.Pass)
+			return true;
+
+		if(actionType == MatchActionType.Place)
+			return !UseContinuousPlacement;
+
+		return false;
 	}
 
 	bool IsSystemOnlyAction(MatchActionType actionType)
@@ -1358,7 +1347,6 @@ public abstract class Match : MonoBehaviour
 		if(flowSnapshot == null)
 			return;
 
-		turnSeq = flowSnapshot.turnSeq;
 		CurrentPlayerIndex = flowSnapshot.currentPlayerIndex;
 		bool[] passStates = flowSnapshot.passStates;
 		if(passStates != null)
@@ -1406,7 +1394,6 @@ public abstract class Match : MonoBehaviour
 			actionType = MatchActionType.Pass,
 			position = Vector2.zero,
 			strength = 1f,
-			turnSeq = turnSeq,
 			actionSeq = nextActionSeq++,
 		};
 		GameManager.Instance.MatchTransport.SendActionRequest(request);
@@ -1422,7 +1409,9 @@ public abstract class Match : MonoBehaviour
 		if(playerIndex < 0 || playerIndex >= Lobby.Current.Players.Count)
 			return false;
 		if(pendingLocalActions.Count >= MaxPendingLocalActions)
+		{
 			return false;
+		}
 		if(pendingLocalActions.Count == 0)
 			CaptureResolvedSnapshotFromCurrentState();
 
@@ -1456,7 +1445,6 @@ public abstract class Match : MonoBehaviour
 			actionType = actionType,
 			position = position,
 			strength = strength,
-			turnSeq = turnSeq,
 			actionSeq = actionSeq,
 		};
 		GameManager.Instance.MatchTransport.SendActionRequest(request);
@@ -1521,7 +1509,6 @@ public abstract class Match : MonoBehaviour
 			actionType = actionType,
 			position = position,
 			strength = strength,
-			turnSeq = turnSeq,
 			actionSeq = nextActionSeq++,
 		};
 		GameManager.Instance.MatchTransport.SendActionRequest(request);

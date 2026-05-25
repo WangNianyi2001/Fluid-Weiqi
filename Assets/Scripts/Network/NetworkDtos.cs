@@ -59,7 +59,6 @@ public sealed class MatchActionRequest
 	public MatchActionType actionType;
 	public Vector2 position;
 	public float strength;
-	public int turnSeq;
 	public int actionSeq;
 }
 
@@ -86,7 +85,6 @@ public sealed class BoardStateSnapshot
 public sealed class MatchFlowSnapshot
 {
 	public int currentPlayerIndex;
-	public int turnSeq;
 	public bool isEnded;
 	public bool[] passStates;
 	public bool[] scoringRequestStates;

@@ -36,9 +36,6 @@ public class PaintingMatch : Match
 	protected override void OnPlayerMoveAccepted(int playerIndex)
 	{
 		AccumulateShrinkByElapsedTime();
-
-		// Keep a global move sequence for UI/network bookkeeping without rotating ownership.
-		IncrementTurnSequence();
 	}
 
 	protected override float GetShrinkDeltaMarginForAcceptedMove()
