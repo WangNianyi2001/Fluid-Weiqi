@@ -33,6 +33,10 @@ public static class BoardUtility
 		public RenderTexture distributionMap;
 		public RenderTexture territoryMap;
 		public ComputeShader distributionShader;
+		public ComputeBuffer[] playerStoneBuffers;
+		public int[] playerStoneBufferCapacities;
+		public Vector3[][] playerStoneDataCaches;
+		public int[] singleIntCpuCache;
 		public ComputeBuffer ownerBuffer;
 		public ComputeBuffer areaPixelCountBuffer;
 		public ComputeBuffer labelBufferA;
@@ -76,6 +80,7 @@ public static class BoardUtility
 	const int ComputePixelsPerLine = 16;
 	const int MinComputeTextureSize = 128;
 	const int MaxComputeTextureSize = 1024;
+	const int CclReadbackStride = 8;
 	const float AreaEpsilon = 1e-6f;
 
 	#endregion
@@ -132,6 +137,33 @@ public static class BoardUtility
 		RunDominantAreaStats(c, state);
 		RunConnectedComponents(c);
 		RunChainStats(c);
+	}
+
+	public static void RenderForDisplay(BoardCaches c, BoardState state, IReadOnlyList<Color> playerColors)
+	{
+		if(!c.isInitialized || state == null)
+			return;
+
+		EnsureComputeResources(c, state);
+		if(c.distributionMap == null || c.territoryMap == null)
+			return;
+
+		RenderDistributionMap(c, state);
+		RenderTerritoryMap(c, state, playerColors);
+		RunDominantAreaStats(c, state);
+	}
+
+	public static void RenderForGameplayQuery(BoardCaches c, BoardState state)
+	{
+		if(!c.isInitialized || state == null)
+			return;
+
+		EnsureComputeResources(c, state);
+		if(c.distributionMap == null || c.territoryMap == null)
+			return;
+
+		RenderDistributionMap(c, state);
+		RenderTerritoryMap(c, state, System.Array.Empty<Color>());
 	}
 
 	public static float[] GetPlayerAreasByDominance(Board b, int playerCount)
@@ -274,7 +306,8 @@ public static class BoardUtility
 			if(position.x < 0 || position.x >= state.Size || position.y < 0 || position.y >= state.Size) return false;
 		}
 
-		if(IsOccupiedAtAbsolutePosition(c, state, position)) return false;
+		if(IsOccupiedAtAbsolutePosition(c, state, position))
+			return false;
 
 		BoardState previewState = new(state);
 		previewState.AddStone(player, position, strength);
@@ -305,6 +338,20 @@ public static class BoardUtility
 		return true;
 	}
 
+	public static int GetTerritoryOwnerAtAbsolutePosition(BoardCaches c, BoardState renderState, Vector2 absolutePosition)
+	{
+		if(!c.isInitialized || c.ownerBuffer == null || renderState == null)
+			return -1;
+		if(!TryEnsureOwnerDataCache(c))
+			return -1;
+
+		int pixelIndex = AbsolutePositionToPixelIndex(c, renderState, absolutePosition);
+		if(pixelIndex < 0)
+			return -1;
+
+		return c.ownerDataCache[pixelIndex];
+	}
+
 	#endregion
 
 	#region Board parameters
@@ -326,7 +373,6 @@ public static class BoardUtility
 	{
 		RenderDistributionMap(c, state);
 		RenderTerritoryMap(c, state, System.Array.Empty<Color>());
-		RunDominantAreaStats(c, state);
 		RunConnectedComponents(c);
 		RunChainStats(c);
 	}
@@ -350,9 +396,7 @@ public static class BoardUtility
 
 	static void RenderDistributionMap(BoardCaches c, BoardState state)
 	{
-		ComputeBuffer[] stoneBuffers = new ComputeBuffer[MaxPlayers];
-		try
-		{
+		EnsurePlayerStoneResources(c);
 			c.distributionShader.SetInt("_Topology", (int)c.topology);
 			c.distributionShader.SetTexture(c.distributionKernel, "_DistributionOutput", c.distributionMap);
 			c.distributionShader.SetFloat("_BoardSize", state.Size - 1);
@@ -363,35 +407,26 @@ public static class BoardUtility
 			for(int player = 0; player < MaxPlayers; ++player)
 			{
 				int stoneCount = player < state.PlayerCount ? state.GetStones(player).Count : 0;
-				stoneBuffers[player] = new ComputeBuffer(Mathf.Max(1, stoneCount), 3 * sizeof(float));
+				ComputeBuffer stoneBuffer = EnsurePlayerStoneBuffer(c, player, stoneCount);
 				c.distributionShader.SetInt($"_Player{player}StoneCount", stoneCount);
-				c.distributionShader.SetBuffer(c.distributionKernel, $"_Player{player}Stones", stoneBuffers[player]);
+				c.distributionShader.SetBuffer(c.distributionKernel, $"_Player{player}Stones", stoneBuffer);
 
 				if(stoneCount == 0)
 					continue;
 
 				IReadOnlyList<StonePlacement> source = state.GetStones(player);
-				GpuStonePlacement[] gpuStones = new GpuStonePlacement[stoneCount];
+				Vector3[] gpuStones = EnsurePlayerStoneDataCache(c, player, stoneCount);
 				for(int i = 0; i < stoneCount; ++i)
 				{
-					gpuStones[i] = new GpuStonePlacement
-					{
-						position = source[i].position,
-						strength = source[i].strength,
-					};
+					StonePlacement stone = source[i];
+					gpuStones[i] = new Vector3(stone.position.x, stone.position.y, stone.strength);
 				}
-				stoneBuffers[player].SetData(gpuStones);
+				stoneBuffer.SetData(gpuStones, 0, 0, stoneCount);
 			}
 
 			int groupsX = Mathf.CeilToInt(c.distributionMap.width / (float)ThreadGroupSize);
 			int groupsY = Mathf.CeilToInt(c.distributionMap.height / (float)ThreadGroupSize);
 			c.distributionShader.Dispatch(c.distributionKernel, groupsX, groupsY, 1);
-		}
-		finally
-		{
-			for(int i = 0; i < stoneBuffers.Length; ++i)
-				stoneBuffers[i]?.Release();
-		}
 	}
 
 	static void RenderTerritoryMap(BoardCaches c, BoardState state, IReadOnlyList<Color> playerColors)
@@ -453,23 +488,30 @@ public static class BoardUtility
 
 		ComputeBuffer readBuffer = c.labelBufferA;
 		ComputeBuffer writeBuffer = c.labelBufferB;
-		int[] changed = new int[1];
+		c.singleIntCpuCache ??= new int[1];
+		int[] changed = c.singleIntCpuCache;
 		for(int i = 0; i < maxCclIterations; ++i)
 		{
 			changed[0] = 0;
 			c.cclChangedBuffer.SetData(changed);
 
-			c.distributionShader.SetBuffer(c.cclPropagateKernel, "_OwnerBuffer", c.ownerBuffer);
-			c.distributionShader.SetBuffer(c.cclPropagateKernel, "_LabelBufferRead", readBuffer);
-			c.distributionShader.SetBuffer(c.cclPropagateKernel, "_LabelBufferWrite", writeBuffer);
-			c.distributionShader.SetBuffer(c.cclPropagateKernel, "_CclChangedBuffer", c.cclChangedBuffer);
-			c.distributionShader.Dispatch(c.cclPropagateKernel, groupsX, groupsY, 1);
+			int strideEnd = Mathf.Min(i + CclReadbackStride, maxCclIterations);
+			for(; i < strideEnd; ++i)
+			{
+				c.distributionShader.SetBuffer(c.cclPropagateKernel, "_OwnerBuffer", c.ownerBuffer);
+				c.distributionShader.SetBuffer(c.cclPropagateKernel, "_LabelBufferRead", readBuffer);
+				c.distributionShader.SetBuffer(c.cclPropagateKernel, "_LabelBufferWrite", writeBuffer);
+				c.distributionShader.SetBuffer(c.cclPropagateKernel, "_CclChangedBuffer", c.cclChangedBuffer);
+				c.distributionShader.Dispatch(c.cclPropagateKernel, groupsX, groupsY, 1);
 
-			(readBuffer, writeBuffer) = (writeBuffer, readBuffer);
+				(readBuffer, writeBuffer) = (writeBuffer, readBuffer);
+			}
 
 			c.cclChangedBuffer.GetData(changed);
 			if(changed[0] == 0)
 				break;
+
+			i -= 1;
 		}
 
 		c.activeLabelBuffer = readBuffer;
@@ -598,6 +640,12 @@ public static class BoardUtility
 
 	static void ReleaseComputeResources(BoardCaches c)
 	{
+		if(c.playerStoneBuffers != null)
+		{
+			for(int i = 0; i < c.playerStoneBuffers.Length; ++i)
+				ReleaseBuffer(ref c.playerStoneBuffers[i]);
+		}
+
 		ReleaseRenderTexture(ref c.distributionMap);
 		ReleaseRenderTexture(ref c.territoryMap);
 		ReleaseBuffer(ref c.ownerBuffer);
@@ -610,7 +658,50 @@ public static class BoardUtility
 		ReleaseBuffer(ref c.chainLibertyBuffer);
 		ReleaseBuffer(ref c.compactChainStatBuffer);
 		ReleaseBuffer(ref c.compactChainStatCountBuffer);
+		c.playerStoneBuffers = null;
+		c.playerStoneBufferCapacities = null;
+		c.playerStoneDataCaches = null;
+		c.singleIntCpuCache = null;
 		c.activeLabelBuffer = null;
+	}
+
+	static void EnsurePlayerStoneResources(BoardCaches c)
+	{
+		if(c.playerStoneBuffers == null || c.playerStoneBuffers.Length != MaxPlayers)
+			c.playerStoneBuffers = new ComputeBuffer[MaxPlayers];
+
+		if(c.playerStoneBufferCapacities == null || c.playerStoneBufferCapacities.Length != MaxPlayers)
+			c.playerStoneBufferCapacities = new int[MaxPlayers];
+
+		if(c.playerStoneDataCaches == null || c.playerStoneDataCaches.Length != MaxPlayers)
+			c.playerStoneDataCaches = new Vector3[MaxPlayers][];
+	}
+
+	static ComputeBuffer EnsurePlayerStoneBuffer(BoardCaches c, int player, int requiredCount)
+	{
+		int capacity = Mathf.Max(1, requiredCount);
+		ComputeBuffer buffer = c.playerStoneBuffers[player];
+		if(buffer == null || c.playerStoneBufferCapacities[player] < capacity)
+		{
+			ReleaseBuffer(ref buffer);
+			buffer = new ComputeBuffer(capacity, 3 * sizeof(float));
+			c.playerStoneBuffers[player] = buffer;
+			c.playerStoneBufferCapacities[player] = capacity;
+		}
+
+		return buffer;
+	}
+
+	static Vector3[] EnsurePlayerStoneDataCache(BoardCaches c, int player, int requiredCount)
+	{
+		int capacity = Mathf.Max(1, requiredCount);
+		Vector3[] cache = c.playerStoneDataCaches[player];
+		if(cache == null || cache.Length < capacity)
+		{
+			cache = new Vector3[capacity];
+			c.playerStoneDataCaches[player] = cache;
+		}
+		return cache;
 	}
 
 	static void AllocateConnectivityBuffers(BoardCaches c, int textureSize)

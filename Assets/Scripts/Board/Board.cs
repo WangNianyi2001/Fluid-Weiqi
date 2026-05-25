@@ -144,7 +144,7 @@ public abstract class Board : MonoBehaviour
 		caches.topology = Topology;
 
 		Color[] colors = PlayerColors ?? new Color[] { Color.black, Color.white };
-		BoardUtility.RenderAnalysis(caches, renderState, colors);
+		BoardUtility.RenderForDisplay(caches, renderState, colors);
 		if(material == null)
 			return;
 
@@ -232,13 +232,14 @@ public abstract class Board : MonoBehaviour
 	#endregion
 
  	#region Preview
-	public void ClearPreview()
+	public void ClearPreview(bool refreshRendering = true)
 	{
 		if(!hasPreview)
 			return;
 
 		hasPreview = false;
-		RefreshRendering();
+		if(refreshRendering)
+			RefreshRendering();
 	}
 
 	public void ShowPreview(BoardState stateToPreview)
@@ -264,6 +265,40 @@ public abstract class Board : MonoBehaviour
 		float x = Random.Range(0, boardSize);
 		float y = Random.Range(0, boardSize);
 		return new Vector2(x, y);
+	}
+
+	/// <summary>
+	/// Normalize an absolute position into this topology's legal domain.
+	/// </summary>
+	public virtual Vector2 NormalizeAbsolutePosition(Vector2 absolutePosition)
+	{
+		float boardExtent = Mathf.Max(0f, State.BoardStateExtent);
+		return new Vector2(
+			Mathf.Clamp(absolutePosition.x, 0f, boardExtent),
+			Mathf.Clamp(absolutePosition.y, 0f, boardExtent));
+	}
+
+	/// <summary>
+	/// Topology-aware distance between two absolute positions.
+	/// </summary>
+	public virtual float ComputeDistance(Vector2 from, Vector2 to)
+	{
+		return Vector2.Distance(from, to);
+	}
+
+	/// <summary>
+	/// Uniformly sample a point in the neighborhood disk around center.
+	/// </summary>
+	public virtual Vector2 SampleUniformAbsolutePositionInNeighborhood(Vector2 center, float radius)
+	{
+		radius = Mathf.Max(0f, radius);
+		if(radius <= 0f)
+			return NormalizeAbsolutePosition(center);
+
+		float angle = Random.Range(0f, Mathf.PI * 2f);
+		float distance = radius * Mathf.Sqrt(Random.value);
+		Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * distance;
+		return NormalizeAbsolutePosition(center + offset);
 	}
 
 	/// <summary>

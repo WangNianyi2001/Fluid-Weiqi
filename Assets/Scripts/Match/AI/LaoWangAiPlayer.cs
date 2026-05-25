@@ -7,6 +7,7 @@ public class LaoWangAiPlayer : AiPlayer
 	const float MinDistanceEpsilon = 0.0001f;
 
 	LaoWangAiConfig laoWangConfig;
+	bool isActive;
 	bool cancelled;
 	readonly BoardUtility.BoardCaches evaluationCaches = new();
 
@@ -16,19 +17,24 @@ public class LaoWangAiPlayer : AiPlayer
 		laoWangConfig = config;
 	}
 
-	public override void RequestMove(BoardState state)
+	public override void SetMoveRight(bool canMove)
 	{
+		if(canMove == isActive)
+			return;
+		isActive = canMove;
+
+		if(!canMove)
+		{
+			cancelled = true;
+			StopAllCoroutines();
+			return;
+		}
+
 		cancelled = false;
-		if(state == null || Match.IsEnded)
+		if(Match.IsEnded)
 			return;
 
-		StartCoroutine(EvaluateAndMove(state));
-	}
-
-	public override void CancelMove()
-	{
-		cancelled = true;
-		StopAllCoroutines();
+		StartCoroutine(EvaluateAndMoveLoop());
 	}
 
 	void OnDestroy()
@@ -36,8 +42,29 @@ public class LaoWangAiPlayer : AiPlayer
 		BoardUtility.Dispose(evaluationCaches);
 	}
 
-	IEnumerator EvaluateAndMove(BoardState state)
+	IEnumerator EvaluateAndMoveLoop()
 	{
+		yield return null; // ensure async relative to SetMoveRight caller
+
+		while(!cancelled && !Match.IsEnded && isActive)
+		{
+			BoardState state = Board.Current != null ? new BoardState(Board.Current.State) : null;
+			if(state == null)
+				yield break;
+
+			yield return EvaluateAndMoveOnce(state);
+
+			if(!Match.UseContinuousPlacement)
+				yield break;
+
+			float frequency = Mathf.Max(1f, Match.ContinuousPlacementFrequencyPerSecond);
+			yield return new WaitForSeconds(1f / frequency);
+		}
+	}
+
+	IEnumerator EvaluateAndMoveOnce(BoardState state)
+	{
+
 		int sampleCount = laoWangConfig != null ? laoWangConfig.SampleCount : 12;
 		float evaluationDelay = laoWangConfig != null ? laoWangConfig.PerCandidateEvaluationDelay : 0f;
 
@@ -72,14 +99,19 @@ public class LaoWangAiPlayer : AiPlayer
 		if(cancelled || Match.IsEnded)
 			yield break;
 
-		if(hasCandidate && Match.ReceivePlace(bestCandidate))
+		float placementStrength = Match.PlacementStrengthPerPlacement;
+
+		if(hasCandidate && Match.ReceivePlace(PlayerIndex, bestCandidate, placementStrength))
 		{
 			NotifyMadeMove();
 			yield break;
 		}
 
-		Match.ReceivePass();
-		NotifyMadeMove();
+		if(!Match.UseContinuousPlacement)
+		{
+			Match.ReceivePass(PlayerIndex);
+			NotifyMadeMove();
+		}
 	}
 
 	bool IsLegalPlacement(BoardState state, Vector2 point)

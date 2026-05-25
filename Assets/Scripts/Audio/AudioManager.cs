@@ -4,22 +4,26 @@ public class AudioManager : MonoBehaviour
 {
 	public static AudioManager Instance { get; private set; }
 
-	#region Constants
-	const string PlaceSoundPath = "Sounds/Place";
-	const string CaptureSoundPath = "Sounds/Capture";
-	const string SkipSoundPath = "Sounds/Skip";
-	const string ClickSoundPath = "Sounds/Click";
-	#endregion
-
 	#region Cached resources
 	AudioClip placeClip;
 	AudioClip captureClip;
 	AudioClip skipClip;
 	AudioClip clickClip;
+	AudioClip brushDownClip;
+	AudioClip[] brushMoveClips;
+	AudioClip brushUpClip;
+	float brushMoveFrequencyPerSecond = 6f;
+	float brushMoveIntervalJitter = 0.25f;
+	float brushDownVolume = 1f;
+	float brushMoveVolume = 0.8f;
+	float brushUpVolume = 1f;
+	float brushMovePitchVariance = 0.08f;
 	#endregion
 
 	#region Runtime state
 	AudioSource sfxSource;
+	bool isBrushStrokeActive;
+	float nextBrushMoveSoundTime;
 	#endregion
 
 	#region Unity life cycle
@@ -41,26 +45,19 @@ public class AudioManager : MonoBehaviour
 		if(sfxSource == null)
 			sfxSource = gameObject.AddComponent<AudioSource>();
 
-		// Load sound clips on demand
-		placeClip = Resources.Load<AudioClip>(PlaceSoundPath);
-		captureClip = Resources.Load<AudioClip>(CaptureSoundPath);
-		skipClip = Resources.Load<AudioClip>(SkipSoundPath);
-		clickClip = Resources.Load<AudioClip>(ClickSoundPath);
-
-		if(placeClip == null)
-			Debug.LogWarning($"AudioManager: Place sound not found at '{PlaceSoundPath}'");
-		if(captureClip == null)
-			Debug.LogWarning($"AudioManager: Capture sound not found at '{CaptureSoundPath}'");
-		if(skipClip == null)
-			Debug.LogWarning($"AudioManager: Skip sound not found at '{SkipSoundPath}'");
-		if(clickClip == null)
-			Debug.LogWarning($"AudioManager: Click sound not found at '{ClickSoundPath}'");
+		LoadAudioSettings();
 	}
 
 	protected void OnDestroy()
 	{
+		isBrushStrokeActive = false;
 		if(Instance == this)
 			Instance = null;
+	}
+
+	protected void Update()
+	{
+		UpdateBrushStrokeLoop();
 	}
 	#endregion
 
@@ -79,7 +76,7 @@ public class AudioManager : MonoBehaviour
 		float pitch = 1f;
 		if(pitchVariance > 0f)
 		{
-			float variance = pitchVariance * Random.Range(-1f, 1f);
+			float variance = pitchVariance * UnityEngine.Random.Range(-1f, 1f);
 			pitch = 1f + variance;
 		}
 
@@ -120,5 +117,91 @@ public class AudioManager : MonoBehaviour
 	{
 		PlaySfx(clickClip, volume, pitchVariance);
 	}
+
+	public void BeginBrushStroke()
+	{
+		if(isBrushStrokeActive)
+			return;
+
+		isBrushStrokeActive = true;
+		PlaySfx(brushDownClip, brushDownVolume, 0f);
+		nextBrushMoveSoundTime = Time.unscaledTime + GetNextBrushMoveInterval();
+	}
+
+	public void EndBrushStroke()
+	{
+		if(!isBrushStrokeActive)
+			return;
+
+		isBrushStrokeActive = false;
+		nextBrushMoveSoundTime = 0f;
+		PlaySfx(brushUpClip, brushUpVolume, 0f);
+	}
 	#endregion
+
+	void UpdateBrushStrokeLoop()
+	{
+		if(!isBrushStrokeActive)
+			return;
+
+		if(Time.unscaledTime < nextBrushMoveSoundTime)
+			return;
+
+		PlayBrushMoveSoundFromPool();
+		nextBrushMoveSoundTime = Time.unscaledTime + GetNextBrushMoveInterval();
+	}
+
+	void LoadAudioSettings()
+	{
+		GameSettings settings = GameSettings.Instance;
+		if(settings == null)
+		{
+			Debug.LogWarning("AudioManager: GameSettings asset not found.");
+			brushMoveClips = new AudioClip[0];
+			return;
+		}
+
+		placeClip = settings.PlaceSoundClip;
+		captureClip = settings.CaptureSoundClip;
+		skipClip = settings.SkipSoundClip;
+		clickClip = settings.ClickSoundClip;
+
+		brushDownClip = settings.BrushDownSoundClip;
+		brushUpClip = settings.BrushUpSoundClip;
+		if(settings.BrushMoveSoundClips != null)
+		{
+			int count = settings.BrushMoveSoundClips.Count;
+			brushMoveClips = new AudioClip[count];
+			for(int i = 0; i < count; ++i)
+				brushMoveClips[i] = settings.BrushMoveSoundClips[i];
+		}
+		else
+		{
+			brushMoveClips = new AudioClip[0];
+		}
+
+		brushMoveFrequencyPerSecond = Mathf.Max(0.1f, settings.BrushMoveFrequencyPerSecond);
+		brushMoveIntervalJitter = Mathf.Clamp01(settings.BrushMoveIntervalJitter);
+		brushDownVolume = Mathf.Clamp01(settings.BrushDownVolume);
+		brushMoveVolume = Mathf.Clamp01(settings.BrushMoveVolume);
+		brushUpVolume = Mathf.Clamp01(settings.BrushUpVolume);
+		brushMovePitchVariance = Mathf.Max(0f, settings.BrushMovePitchVariance);
+	}
+
+	void PlayBrushMoveSoundFromPool()
+	{
+		if(brushMoveClips == null || brushMoveClips.Length == 0)
+			return;
+
+		int index = UnityEngine.Random.Range(0, brushMoveClips.Length);
+		PlaySfx(brushMoveClips[index], brushMoveVolume, brushMovePitchVariance);
+	}
+
+	float GetNextBrushMoveInterval()
+	{
+		float frequency = Mathf.Max(0.1f, brushMoveFrequencyPerSecond);
+		float baseInterval = 1f / frequency;
+		float jitterScale = 1f + UnityEngine.Random.Range(-brushMoveIntervalJitter, brushMoveIntervalJitter);
+		return Mathf.Max(0.02f, baseInterval * jitterScale);
+	}
 }

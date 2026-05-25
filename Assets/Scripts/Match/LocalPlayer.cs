@@ -17,25 +17,32 @@ public class LocalPlayer : MatchPlayer
 		input.OnCursorEnter += OnCursorEnter;
 		input.OnCursorMove += OnCursorMove;
 		input.OnCursorExit += OnCursorExit;
+		input.OnPrimaryDown += OnPrimaryDown;
+		input.OnPrimaryUp += OnPrimaryUp;
 		// OnPlace/OnRemove/OnPass are subscribed only while it's this player's turn,
 		// so at most one LocalPlayer is subscribed at any given time.
 	}
 
-	public override void RequestMove(BoardState state)
+	public override void SetMoveRight(bool canMove)
 	{
-		receivingMove = true;
-		input.OnPlace += OnPlace;
-		input.OnRemove += OnRemove;
-		input.OnPass += OnPass;
-	}
+		if(canMove == receivingMove)
+			return;
 
-	public override void CancelMove()
-	{
-		receivingMove = false;
-		input.OnPlace -= OnPlace;
-		input.OnRemove -= OnRemove;
-		input.OnPass -= OnPass;
-		Match.ReceiveCursorExit();
+		receivingMove = canMove;
+		if(canMove)
+		{
+			input.OnPlace += OnPlace;
+			input.OnRemove += OnRemove;
+			input.OnPass += OnPass;
+		}
+		else
+		{
+			input.OnPlace -= OnPlace;
+			input.OnRemove -= OnRemove;
+			input.OnPass -= OnPass;
+			EndBrushStrokeSfx();
+			Match.ReceiveCursorExit();
+		}
 	}
 
 	protected void OnDestroy()
@@ -46,9 +53,30 @@ public class LocalPlayer : MatchPlayer
 		input.OnCursorEnter -= OnCursorEnter;
 		input.OnCursorMove -= OnCursorMove;
 		input.OnCursorExit -= OnCursorExit;
+		input.OnPrimaryDown -= OnPrimaryDown;
+		input.OnPrimaryUp -= OnPrimaryUp;
 		input.OnPlace -= OnPlace;
 		input.OnRemove -= OnRemove;
 		input.OnPass -= OnPass;
+	}
+
+	void OnPrimaryDown()
+	{
+		if(!receivingMove || !Match.UseContinuousPlacement)
+			return;
+		AudioManager.Instance?.BeginBrushStroke();
+	}
+
+	void OnPrimaryUp()
+	{
+		if(!Match.UseContinuousPlacement)
+			return;
+		EndBrushStrokeSfx();
+	}
+
+	void EndBrushStrokeSfx()
+	{
+		AudioManager.Instance?.EndBrushStroke();
 	}
 
 	void OnCursorEnter(Vector2 position)
@@ -77,16 +105,20 @@ public class LocalPlayer : MatchPlayer
 		if(!receivingMove)
 			return;
 
-		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Place, position))
+		float placementStrength = Match.PlacementStrengthPerPlacement;
+
+		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Place, position, placementStrength))
 		{
-			CancelMove();
+			if(!Match.UseContinuousPlacement)
+				SetMoveRight(false);
 			return;
 		}
 
-		bool succeed = Match.ReceivePlace(position);
+		bool succeed = Match.ReceivePlace(PlayerIndex, position, placementStrength);
 		if(succeed)
 		{
-			CancelMove();
+			if(!Match.UseContinuousPlacement)
+				SetMoveRight(false);
 			NotifyMadeMove();
 		}
 	}
@@ -97,10 +129,10 @@ public class LocalPlayer : MatchPlayer
 			return;
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Remove, position))
 		{
-			CancelMove();
+			SetMoveRight(false);
 			return;
 		}
-		Match.ReceiveRemove(position);
+		Match.ReceiveRemove(PlayerIndex, position);
 	}
 
 	void OnPass()
@@ -110,12 +142,14 @@ public class LocalPlayer : MatchPlayer
 
 		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Pass, Vector2.zero))
 		{
-			CancelMove();
+			if(!Match.UseContinuousPlacement)
+				SetMoveRight(false);
 			return;
 		}
 
-		CancelMove();
-		Match.ReceivePass();
+		if(!Match.UseContinuousPlacement)
+			SetMoveRight(false);
+		Match.ReceivePass(PlayerIndex);
 		NotifyMadeMove();
 	}
 }

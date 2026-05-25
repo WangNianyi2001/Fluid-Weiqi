@@ -15,7 +15,8 @@ public interface IMatchTransport
 	void ConfigureAsClient(LobbyLocator lobbyLocator, PlayerLocator localPlayerLocator);
 
 	void SendActionRequest(MatchActionRequest request);
-	void BroadcastActionResult(MatchActionResult result);
+	void SendActionResult(MatchActionResult result, PlayerLocator targetPlayerLocator);
+	void BroadcastActionResult(MatchActionResult result, PlayerLocator excludedPlayerLocator);
 
 	void SetConnectionState(NetworkConnectionState state);
 }

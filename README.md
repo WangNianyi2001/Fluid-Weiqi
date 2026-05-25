@@ -1,23 +1,37 @@
-[中文说明 / Chinese README](README.zh-CN.md)
+# 液态围棋
 
-# Fluid Weiqi (Continuous Go)
+## 多语言
 
-## 1. What This Is
-Fluid Weiqi is an experimental tabletop strategy game inspired by Go, but played on a continuous influence field instead of strictly discrete stones.
+- 简体中文介绍（本页面）
+- [English introduction](./README.en.md)
+- [日本語紹介](./README.ja.md)
+- [한국어 소개](./README.kr.md)
 
-This build is for player testing and feedback, not a final release.
+## 相关链接
 
-## 3. Controls
-- Move mouse: preview stone placement
-- Left click: place stone
-- Hold Shift + left click: free placement (continuous)
-- Left click without Shift: snap-to-grid placement
+- [Steam 商店页](https://store.steampowered.com/app/4670730/)
+- [itch.io 页面](https://nianyi-wang.itch.io/fluid-weiqi)（早期 demo）
+- [GitHub 仓库](https://github.com/WangNianyi2001/Fluid-Weiqi)
 
-## 4. Current Rule Set (Test Build)
-- Turn-based play with alternating players
-- Stones generate influence (Gaussian-style density field)
-- Occupied-point blocking is enabled
-- Group connectivity and capture are enabled
-- Border adhesion behavior is enabled
+## 游戏介绍
 
-This is still an experimental ruleset and may differ from traditional Go.
+《液态围棋》是传统围棋游戏的一个电子变种——棋子不再是精确放置在格点上的实体，而是变成了模糊、柔性的势力范围，可以放置在棋盘里的任意位置上。
+
+尽管死活的判定逻辑仍然与传统规则相同——一块棋完全被包围，无气则死——但在更加自由的落子规则下，许多在传统规则下已经成为常识的事情会变得迥异，例如：最少三颗棋子即可吃掉一颗敌方棋子，原本连续的一块棋可以被断开，征吃变得更加困难，等等。即使您已经是征战弈坛的高手，您仍然可以在本游戏里体验到初识一款游戏时探索规则的乐趣。
+
+除了“看上去像围棋”的传统模式，本游戏还计划支持若干规则变种，如：
+
+- 可调整的棋盘大小；
+- 2~4 人在同一棋盘上对弈；
+- 球面棋盘；
+- 缩圈模式（棋盘会逐渐缩小，直至一方独霸盘面）。
+
+以下内容计划在未来的版本中提供：
+
+- 画笔模式（对战诸方实时在棋盘上绘制）；
+- 落雨模式（棋盘上会逐渐出现中立的雨滴）；
+- 圆形，以及可以自由设置形状的棋盘。
+
+## 授权协议
+
+本项目在 [MIT 协议](./LICENSE)下发布。

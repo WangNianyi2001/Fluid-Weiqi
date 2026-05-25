@@ -2,9 +2,20 @@ using UnityEngine;
 
 public class TraditionalMatch : Match
 {
+	public override bool SupportsRequestScoringAction => true;
+	public override bool SupportsResignAction => true;
+
 	public override int GetCurrentTurnNumber()
 	{
-		return TurnSequence / Mathf.Max(1, PlayerCount) + 1;
+		BoardState state = Board.Current?.State;
+		if(state == null)
+			return 1;
+
+		int totalStoneCount = 0;
+		for(int i = 0; i < state.PlayerCount; ++i)
+			totalStoneCount += state.GetStones(i).Count;
+
+		return totalStoneCount / Mathf.Max(1, PlayerCount) + 1;
 	}
 
 	#region Input
@@ -26,11 +37,23 @@ public class TraditionalMatch : Match
 
 		SetPlayerPassState(CurrentPlayerIndex, true);
 		++passCount;
-		if(passCount == PlayerCount)
+		if(passCount >= GetActivePlayerCount())
 		{
 			EndMatch();
 			return;
 		}
+	}
+
+	int GetActivePlayerCount()
+	{
+		int count = 0;
+		for(int i = 0; i < PlayerCount; ++i)
+		{
+			if(!IsPlayerResigned(i))
+				count += 1;
+		}
+
+		return Mathf.Max(1, count);
 	}
 	#endregion
 }

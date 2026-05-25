@@ -14,16 +14,51 @@ public enum MatchActionType
 	Place,
 	Pass,
 	Remove,
+	RequestScoring,
+	Resign,
+}
+
+public enum MatchRequestKind
+{
+	Action,
+	SnapshotPull,
+}
+
+public enum MatchResultKind
+{
+	ActionAck,
+	ActionReject,
+	DeltaPush,
+	SnapshotPush,
+}
+
+public enum MatchDeltaOpType
+{
+	Place,
+	Pass,
+	Remove,
+	RequestScoring,
+	Resign,
+}
+
+[System.Serializable]
+public sealed class MatchDeltaOp
+{
+	public MatchDeltaOpType opType;
+	public int playerIndex;
+	public Vector2 position;
+	public float strength;
 }
 
 [System.Serializable]
 public sealed class MatchActionRequest
 {
+	public MatchRequestKind requestKind = MatchRequestKind.Action;
 	public PlayerLocator playerLocator;
 	public int playerIndex;
 	public MatchActionType actionType;
 	public Vector2 position;
-	public int turnSeq;
+	public float strength;
 	public int actionSeq;
 }
 
@@ -50,18 +85,23 @@ public sealed class BoardStateSnapshot
 public sealed class MatchFlowSnapshot
 {
 	public int currentPlayerIndex;
-	public int turnSeq;
 	public bool isEnded;
 	public bool[] passStates;
+	public bool[] scoringRequestStates;
+	public bool[] resignedStates;
 }
 
 [System.Serializable]
 public sealed class MatchActionResult
 {
+	public MatchResultKind resultKind = MatchResultKind.ActionReject;
+	public PlayerLocator targetPlayerLocator;
+	public PlayerLocator sourcePlayerLocator;
 	public bool accepted;
 	public string reason;
 	public int playerIndex;
 	public int actionSeq;
+	public List<MatchDeltaOp> deltaOps = new();
 	public BoardStateSnapshot boardSnapshot;
 	public MatchFlowSnapshot flowSnapshot;
 }

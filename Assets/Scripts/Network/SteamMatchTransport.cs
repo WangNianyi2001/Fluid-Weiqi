@@ -91,11 +91,22 @@ public class SteamMatchTransport : IMatchTransport
 		SendTo(hostSteamId, data, ChannelRequest);
 	}
 
+	public void SendActionResult(MatchActionResult result, PlayerLocator targetPlayerLocator)
+	{
+		if(!IsHost || !targetPlayerLocator.IsValid)
+			return;
+		if(!ulong.TryParse(targetPlayerLocator.id, out ulong targetRawId))
+			return;
+
+		byte[] data = NetworkSerializer.SerializeMatchActionResult(result);
+		SendTo(new CSteamID(targetRawId), data, ChannelResult);
+	}
+
 	// -------------------------------------------------------------------------
 	// Broadcast (host → all lobby members except self)
 	// -------------------------------------------------------------------------
 
-	public void BroadcastActionResult(MatchActionResult result)
+	public void BroadcastActionResult(MatchActionResult result, PlayerLocator excludedPlayerLocator)
 	{
 		if(!IsHost)
 			return;
@@ -105,12 +116,19 @@ public class SteamMatchTransport : IMatchTransport
 		byte[] data = NetworkSerializer.SerializeMatchActionResult(result);
 		CSteamID steamLobbyId = new CSteamID(lobbyRawId);
 		CSteamID selfId = SteamUser.GetSteamID();
+		CSteamID excludedId = default;
+		ulong excludedRawId = 0;
+		bool hasExcluded = excludedPlayerLocator.IsValid && ulong.TryParse(excludedPlayerLocator.id, out excludedRawId);
+		if(hasExcluded)
+			excludedId = new CSteamID(excludedRawId);
 
 		int memberCount = SteamMatchmaking.GetNumLobbyMembers(steamLobbyId);
 		for(int i = 0; i < memberCount; ++i)
 		{
 			CSteamID member = SteamMatchmaking.GetLobbyMemberByIndex(steamLobbyId, i);
 			if(member == selfId)
+				continue;
+			if(hasExcluded && member == excludedId)
 				continue;
 			SendTo(member, data, ChannelResult);
 		}

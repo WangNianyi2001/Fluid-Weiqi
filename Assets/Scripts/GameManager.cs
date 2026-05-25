@@ -53,18 +53,6 @@ public class GameManager : MonoBehaviour
 		InitializeNetworkServices();
 	}
 
-	protected void Start()
-	{
-		// DEBUG
-		if(!SteamManager.Initialized)
-			Debug.LogWarning("Steam SDK not initialized.");
-		else
-		{
-			string name = Steamworks.SteamFriends.GetPersonaName();
-			Debug.Log($"Steam persona name: {name}");
-		}
-	}
-
 	protected void OnDestroy()
 	{
 		if(Instance == this)

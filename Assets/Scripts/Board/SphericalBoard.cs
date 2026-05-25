@@ -30,7 +30,54 @@ public class SphericalBoard : Board
 		Vector3 direction = Random.onUnitSphere;
 		Vector3 worldPoint = transform.TransformPoint(direction * SphereLocalRadius);
 		Vector2 boardLocal = WorldToBoardLocalPosition(worldPoint);
-		return BoardLocalToAbsolutePosition(boardLocal);
+		return NormalizeAbsolutePosition(BoardLocalToAbsolutePosition(boardLocal));
+	}
+
+	public override Vector2 NormalizeAbsolutePosition(Vector2 absolutePosition)
+	{
+		float size = Mathf.Max(1f, State.Size);
+		float safeUpperY = Mathf.Max(0f, size - 1e-4f);
+		return new Vector2(
+			Mathf.Repeat(absolutePosition.x, 2f * size),
+			Mathf.Clamp(absolutePosition.y, 0f, safeUpperY));
+	}
+
+	public override float ComputeDistance(Vector2 from, Vector2 to)
+	{
+		float size = Mathf.Max(1f, State.Size);
+		Vector3 fromDir = AbsoluteToSphereDirection(from);
+		Vector3 toDir = AbsoluteToSphereDirection(to);
+		float cosine = Mathf.Clamp(Vector3.Dot(fromDir, toDir), -1f, 1f);
+		float angle = Mathf.Acos(cosine);
+		return angle * (size / Mathf.PI);
+	}
+
+	public override Vector2 SampleUniformAbsolutePositionInNeighborhood(Vector2 center, float radius)
+	{
+		radius = Mathf.Max(0f, radius);
+		if(radius <= 0f)
+			return NormalizeAbsolutePosition(center);
+
+		float size = Mathf.Max(1f, State.Size);
+		float maxAngle = Mathf.Max(0f, radius * Mathf.PI / size);
+		if(maxAngle <= 0f)
+			return NormalizeAbsolutePosition(center);
+
+		Vector3 centerDir = AbsoluteToSphereDirection(center);
+		Vector3 tangentA = BuildStableTangent(centerDir);
+		Vector3 tangentB = Vector3.Cross(centerDir, tangentA).normalized;
+
+		float azimuth = Random.Range(0f, TwoPi);
+		float cosMax = Mathf.Cos(maxAngle);
+		float cosTheta = Mathf.Lerp(1f, cosMax, Random.value);
+		float theta = Mathf.Acos(Mathf.Clamp(cosTheta, -1f, 1f));
+		float sinTheta = Mathf.Sin(theta);
+
+		Vector3 tangentDir = (Mathf.Cos(azimuth) * tangentA + Mathf.Sin(azimuth) * tangentB).normalized;
+		Vector3 sampledDir = (Mathf.Cos(theta) * centerDir + sinTheta * tangentDir).normalized;
+		Vector3 worldPoint = transform.TransformPoint(sampledDir * SphereLocalRadius);
+		Vector2 boardLocal = WorldToBoardLocalPosition(worldPoint);
+		return NormalizeAbsolutePosition(BoardLocalToAbsolutePosition(boardLocal));
 	}
 
 	/// <summary>
@@ -55,7 +102,7 @@ public class SphericalBoard : Board
 
 		float longitudeRatio = nextSize / currentSize;
 		float latitudeRatio = nextSize / currentSize;
-		float nextLatitudeMax = nextSize - 1f;
+		float nextLatitudeMax = Mathf.Max(0f, nextSize - 1e-4f);
 
 		// Keep angular locations stable while switching to the smaller index domain.
 		for(int player = nextState.PlayerCount - 1; player >= 0; --player)
@@ -236,6 +283,28 @@ public class SphericalBoard : Board
 		float u = absolutePosition.x / (2f * n) - 0.5f;
 		float v = absolutePosition.y / n - 0.5f;
 		return new Vector2(u, v);
+	}
+
+	Vector3 AbsoluteToSphereDirection(Vector2 absolutePosition)
+	{
+		Vector2 normalized = NormalizeAbsolutePosition(absolutePosition);
+		Vector2 boardLocal = AbsoluteToBoardLocalPosition(normalized);
+		float phi = boardLocal.x * TwoPi;
+		float theta = boardLocal.y * Mathf.PI;
+		float cosT = Mathf.Cos(theta);
+		return new Vector3(
+			cosT * Mathf.Sin(phi),
+			Mathf.Sin(theta),
+			cosT * Mathf.Cos(phi)).normalized;
+	}
+
+	static Vector3 BuildStableTangent(Vector3 normal)
+	{
+		Vector3 fallback = Mathf.Abs(normal.y) < 0.99f ? Vector3.up : Vector3.right;
+		Vector3 tangent = Vector3.Cross(fallback, normal);
+		if(tangent.sqrMagnitude < 1e-8f)
+			tangent = Vector3.Cross(Vector3.forward, normal);
+		return tangent.normalized;
 	}
 
 	// ── Grid material ────────────────────────────────────────────────────

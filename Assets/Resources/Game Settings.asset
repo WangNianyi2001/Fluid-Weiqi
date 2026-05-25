@@ -17,7 +17,7 @@ MonoBehaviour:
   defaultSphericalMatchSkinPrefab: {fileID: 3292742582923757440, guid: a2ae6c5a14c7413439b13d78c17c84b7, type: 3}
   legacyMatchModes:
   - {fileID: 11400000, guid: e57dd985eca19df44bf15634ad27a8fb, type: 2}
-  - {fileID: 11400000, guid: 2bcae83d97d660f488839c78f4b7c79f, type: 2}
+  - {fileID: 11400000, guid: 5ef5de0c2f5d4a39bd68f76f286ef613, type: 2}
   legacyAis:
   - {fileID: 11400000, guid: 296b6405bad1d49458d5c56bd2246ce8, type: 2}
   - {fileID: 11400000, guid: 4eeb55ebf20adcf4290fae2e269709c8, type: 2}
@@ -34,3 +34,17 @@ MonoBehaviour:
     color: {r: 0, g: 0, b: 1, a: 1}
   - name: "\u9EC4"
     color: {r: 1, g: 1, b: 0, a: 1}
+  placeSoundClip: {fileID: 8300000, guid: 753c69577c4d95b49bc03848b22cf254, type: 3}
+  captureSoundClip: {fileID: 8300000, guid: e57407e7ab051a14687c99a7846024bf, type: 3}
+  skipSoundClip: {fileID: 8300000, guid: 945675095e8575e40a02ea6e17c2f64c, type: 3}
+  clickSoundClip: {fileID: 8300000, guid: c9a4e729f7904784f95ccf71a79cde8c, type: 3}
+  brushDownSoundClip: {fileID: 8300000, guid: c9a4e729f7904784f95ccf71a79cde8c, type: 3}
+  brushMoveSoundClips:
+  - {fileID: 8300000, guid: 753c69577c4d95b49bc03848b22cf254, type: 3}
+  brushUpSoundClip: {fileID: 0}
+  brushMoveFrequencyPerSecond: 6
+  brushMoveIntervalJitter: 0.25
+  brushDownVolume: 1
+  brushMoveVolume: 0.8
+  brushUpVolume: 1
+  brushMovePitchVariance: 0.08

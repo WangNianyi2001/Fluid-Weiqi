@@ -16,8 +16,7 @@ public abstract class MatchPlayer : MonoBehaviour
 		PlayerIndex = playerIndex;
 	}
 
-	public abstract void RequestMove(BoardState state);
-	public abstract void CancelMove();
+	public abstract void SetMoveRight(bool canMove);
 
 	public virtual void Dispose()
 	{

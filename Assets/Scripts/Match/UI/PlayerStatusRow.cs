@@ -11,10 +11,17 @@ public class PlayerStatusRow : MonoBehaviour
 	}
 
 	[SerializeField] Text nameText;
+	string baseName;
+	bool isScoringRequested;
+	bool isResigned;
 	public string Name
 	{
-		get => nameText.text;
-		set => nameText.text = value;
+		get => baseName;
+		set
+		{
+			baseName = value;
+			RefreshNameText();
+		}
 	}
 
 	[SerializeField] Text areaValueText;
@@ -40,5 +47,37 @@ public class PlayerStatusRow : MonoBehaviour
 			if(passedIndicator != null)
 				passedIndicator.enabled = value;
 		}
+	}
+
+	public bool IsScoringRequested
+	{
+		set
+		{
+			isScoringRequested = value;
+			RefreshNameText();
+		}
+	}
+
+	public bool IsResigned
+	{
+		set
+		{
+			isResigned = value;
+			RefreshNameText();
+		}
+	}
+
+	void RefreshNameText()
+	{
+		if(nameText == null)
+			return;
+
+		string suffix = string.Empty;
+		if(isScoringRequested)
+			suffix += " [申请点目]";
+		if(isResigned)
+			suffix += " [已认输]";
+
+		nameText.text = (baseName ?? string.Empty) + suffix;
 	}
 }

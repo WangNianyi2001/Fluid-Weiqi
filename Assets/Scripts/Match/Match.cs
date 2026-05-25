@@ -25,6 +25,22 @@ public struct PlayerInfo
 	public Color color;
 }
 
+public sealed class MatchPlayerResult
+{
+	public int playerIndex;
+	public string playerName;
+	public float area;
+	public bool isResigned;
+}
+
+public sealed class MatchResultSummary
+{
+	public List<MatchPlayerResult> playerResults = new();
+	public List<int> winnerPlayerIndexes = new();
+	public bool isDraw;
+	public bool hasWinner => winnerPlayerIndexes != null && winnerPlayerIndexes.Count > 0;
+}
+
 public abstract class Match : MonoBehaviour
 {
 	public static Match Current { get; private set; }
@@ -35,11 +51,43 @@ public abstract class Match : MonoBehaviour
 	readonly List<MatchPlayer> players = new();
 	bool isEnded;
 	public bool IsEnded => isEnded;
-	bool[] playerPassStates;
-	int turnSeq;
+	int activePlayerIndex = -1;
+	float activePlacementStrength = 1f;
+	readonly Dictionary<int, bool> playerPassStates = new();
+	readonly Dictionary<int, bool> playerScoringRequestStates = new();
+	readonly Dictionary<int, bool> playerResignedStates = new();
+	readonly Dictionary<int, bool> playerMoveRights = new();
 	int nextActionSeq = 1;
 	int pendingAuthorityActionSeq;
+	PlayerLocator pendingAuthoritySourceLocator;
+	MatchActionType pendingAuthorityActionType;
+	Vector2 pendingAuthorityActionPosition;
+	float pendingAuthorityActionStrength = 1f;
+	bool hasPendingAuthorityAction;
+
+	MatchActionType lastAcceptedActionType;
+	Vector2 lastAcceptedActionPosition;
+	float lastAcceptedActionStrength = 1f;
+	bool hasLastAcceptedAction;
+
+	readonly HashSet<int> pendingLocalActionSeqs = new();
+	readonly List<PendingLocalAction> pendingLocalActions = new();
+	BoardStateSnapshot lastResolvedBoardSnapshot;
+	MatchFlowSnapshot lastResolvedFlowSnapshot;
+	MatchResultSummary lastResultSummary;
 	IMatchTransport matchTransport;
+	public MatchResultSummary LastResultSummary => lastResultSummary;
+
+	const int MaxPendingLocalActions = 64;
+
+	struct PendingLocalAction
+	{
+		public int actionSeq;
+		public int playerIndex;
+		public MatchActionType actionType;
+		public Vector2 position;
+		public float strength;
+	}
 
 	#region Unity life cycle
 	protected void Awake()
@@ -50,9 +98,11 @@ public abstract class Match : MonoBehaviour
 
 	protected void Start()
 	{
+		lastResultSummary = null;
 		InitializePlayers();
 		CurrentPlayerIndex = 0;
-		BeginCurrentPlayerTurn();
+		BeginMoveWindow();
+		CaptureResolvedSnapshotFromCurrentState();
 		InitializeNetworkTransport();
 	}
 
@@ -90,9 +140,80 @@ public abstract class Match : MonoBehaviour
 		if(isEnded)
 			return;
 
+		FinalizeMatchEnd();
+	}
+
+	void FinalizeMatchEnd()
+	{
+		if(isEnded)
+			return;
+
 		isEnded = true;
+		lastResultSummary = CalculateResultSummary();
 		CancelAllPlayers();
 		onEnd?.Invoke();
+	}
+
+	public MatchResultSummary CalculateResultSummary()
+	{
+		MatchResultSummary summary = new MatchResultSummary();
+
+		float[] areaByPlayer = null;
+		if(Board.Current != null && Board.Current.State != null)
+			areaByPlayer = BoardUtility.GetPlayerAreasByDominance(Board.Current, PlayerCount);
+
+		for(int i = 0; i < PlayerCount; ++i)
+		{
+			summary.playerResults.Add(new MatchPlayerResult
+			{
+				playerIndex = i,
+				playerName = PlayerInfos != null && i < PlayerInfos.Count ? PlayerInfos[i].name : $"Player{i + 1}",
+				area = areaByPlayer != null && i < areaByPlayer.Length ? areaByPlayer[i] : 0f,
+				isResigned = IsPlayerResigned(i),
+			});
+		}
+
+		List<MatchPlayerResult> activePlayers = new List<MatchPlayerResult>();
+		for(int i = 0; i < summary.playerResults.Count; ++i)
+		{
+			if(!summary.playerResults[i].isResigned)
+				activePlayers.Add(summary.playerResults[i]);
+		}
+
+		if(activePlayers.Count == 0)
+		{
+			summary.isDraw = false;
+			return summary;
+		}
+
+		if(activePlayers.Count == 1)
+		{
+			summary.winnerPlayerIndexes.Add(activePlayers[0].playerIndex);
+			summary.isDraw = false;
+			return summary;
+		}
+
+		float maxArea = float.MinValue;
+		for(int i = 0; i < activePlayers.Count; ++i)
+			maxArea = Mathf.Max(maxArea, activePlayers[i].area);
+
+		for(int i = 0; i < activePlayers.Count; ++i)
+		{
+			if(activePlayers[i].area >= maxArea)
+				summary.winnerPlayerIndexes.Add(activePlayers[i].playerIndex);
+		}
+
+		summary.isDraw = activePlayers.Count > 1 && summary.winnerPlayerIndexes.Count == activePlayers.Count;
+		return summary;
+	}
+
+	protected void BroadcastSnapshotToClientsForSystemEvent()
+	{
+		if(!ShouldBroadcastAuthorityResult())
+			return;
+
+		MatchActionResult snapshot = CreateSnapshotResult(MatchResultKind.SnapshotPush, true, null, -1, 0);
+		BroadcastAuthorityResult(snapshot, default);
 	}
 	#endregion
 
@@ -109,7 +230,7 @@ public abstract class Match : MonoBehaviour
 			}
 
 			if(!isEnded)
-				BeginCurrentPlayerTurn();
+				BeginMoveWindow();
 		}
 	}
 
@@ -118,9 +239,19 @@ public abstract class Match : MonoBehaviour
 		OnCursorEnter(position);
 	}
 
+	public void ReceiveCursorEnter(int playerIndex, Vector2 position)
+	{
+		ExecuteAsPlayer(playerIndex, PlacementStrengthPerPlacement, () => OnCursorEnter(position));
+	}
+
 	public void ReceiveCursorMove(Vector2 position)
 	{
 		OnCursorMove(position);
+	}
+
+	public void ReceiveCursorMove(int playerIndex, Vector2 position)
+	{
+		ExecuteAsPlayer(playerIndex, PlacementStrengthPerPlacement, () => OnCursorMove(position));
 	}
 
 	public void ReceiveCursorExit()
@@ -128,20 +259,65 @@ public abstract class Match : MonoBehaviour
 		OnCursorExit();
 	}
 
+	public void ReceiveCursorExit(int playerIndex)
+	{
+		ExecuteAsPlayer(playerIndex, PlacementStrengthPerPlacement, OnCursorExit);
+	}
+
 	public bool ReceivePlace(Vector2 position)
 	{
-		OnPlace(position);
+		return ReceivePlace(CurrentPlayerIndex, position, PlacementStrengthPerPlacement);
+	}
+
+	public bool ReceivePlace(int playerIndex, Vector2 position)
+	{
+		return ReceivePlace(playerIndex, position, PlacementStrengthPerPlacement);
+	}
+
+	public bool ReceivePlace(int playerIndex, Vector2 position, float strength)
+	{
+		ExecuteAsPlayer(playerIndex, Mathf.Max(0.0001f, strength), () => OnPlace(position));
 		return LastPlacementSucceed;
 	}
 
 	public void ReceiveRemove(Vector2 position)
 	{
-		OnRemove(position);
+		ReceiveRemove(CurrentPlayerIndex, position);
+	}
+
+	public void ReceiveRemove(int playerIndex, Vector2 position)
+	{
+		ExecuteAsPlayer(playerIndex, 1f, () => OnRemove(position));
 	}
 
 	public void ReceivePass()
 	{
-		OnPass();
+		ReceivePass(CurrentPlayerIndex);
+	}
+
+	public void ReceivePass(int playerIndex)
+	{
+		ExecuteAsPlayer(playerIndex, 1f, OnPass);
+	}
+
+	public void ReceiveRequestScoring()
+	{
+		ReceiveRequestScoring(CurrentPlayerIndex);
+	}
+
+	public void ReceiveRequestScoring(int playerIndex)
+	{
+		ExecuteAsPlayer(playerIndex, 1f, OnRequestScoring);
+	}
+
+	public void ReceiveResign()
+	{
+		ReceiveResign(CurrentPlayerIndex);
+	}
+
+	public void ReceiveResign(int playerIndex)
+	{
+		ExecuteAsPlayer(playerIndex, 1f, OnResign);
 	}
 
 	protected virtual void OnCursorEnter(Vector2 position)
@@ -159,6 +335,22 @@ public abstract class Match : MonoBehaviour
 		Board.Current.ClearPreview();
 	}
 
+	protected int ActivePlayerIndex => activePlayerIndex >= 0 ? activePlayerIndex : CurrentPlayerIndex;
+
+	void ExecuteAsPlayer(int playerIndex, float placementStrength, Action action)
+	{
+		if(action == null)
+			return;
+
+		int previous = activePlayerIndex;
+		float previousStrength = activePlacementStrength;
+		activePlayerIndex = Mathf.Clamp(playerIndex, 0, Mathf.Max(0, PlayerCount - 1));
+		activePlacementStrength = placementStrength;
+		action();
+		activePlacementStrength = previousStrength;
+		activePlayerIndex = previous;
+	}
+
 	protected virtual void OnPlace(Vector2 position)
 	{
 		LastPlacementSucceed = false;
@@ -171,25 +363,116 @@ public abstract class Match : MonoBehaviour
 		AnalyzeState(currentState);
 
 		LastPlacementSucceed = BoardUtility.TryPlaceStoneStandard(
-			board.Caches, currentState, currentPlayerIndex, position, out BoardState nextState);
+			board.Caches, currentState, ActivePlayerIndex, position, out BoardState nextState, activePlacementStrength);
 		if(!LastPlacementSucceed)
 			return;
 
-		if(AudioManager.Instance != null)
+		if(AudioManager.Instance != null && !UseContinuousPlacement)
 			AudioManager.Instance.PlayPlaceStoneSound();
 
-		int capturedStoneCount = CountCapturedStones(currentState, nextState, currentPlayerIndex);
+		int capturedStoneCount = CountCapturedStones(currentState, nextState, ActivePlayerIndex);
 		if(capturedStoneCount > 0 && AudioManager.Instance != null)
 			AudioManager.Instance.PlayCaptureSound();
 
+		// SetState already refreshes board visuals with the latest state.
 		board.SetState(nextState);
-		board.ClearPreview();
+		board.ClearPreview(false);
+		ClearAllScoringRequestStates();
+		RecordAcceptedAction(MatchActionType.Place, ActivePlayerIndex, position, activePlacementStrength);
+		OnPlacementAccepted(ActivePlayerIndex, position, activePlacementStrength);
 		onStateChanged?.Invoke();
 	}
 
-	protected virtual void OnRemove(Vector2 position) { }
+	protected virtual void OnPlacementAccepted(int playerIndex, Vector2 position, float strength)
+	{
+	}
 
-	protected virtual void OnPass() { }
+	protected virtual void OnRemove(Vector2 position)
+	{
+		RecordAcceptedAction(MatchActionType.Remove, ActivePlayerIndex, position, 1f);
+	}
+
+	protected virtual void OnPass()
+	{
+		RecordAcceptedAction(MatchActionType.Pass, ActivePlayerIndex, Vector2.zero, 1f);
+	}
+
+	protected virtual void OnRequestScoring()
+	{
+		RecordAcceptedAction(MatchActionType.RequestScoring, ActivePlayerIndex, Vector2.zero, 1f);
+		SetPlayerScoringRequestState(ActivePlayerIndex, true);
+
+		for(int i = 0; i < PlayerCount; ++i)
+		{
+			if(IsPlayerResigned(i))
+				continue;
+			if(!IsPlayerScoringRequested(i))
+				return;
+		}
+
+		EndMatch();
+	}
+
+	protected virtual void OnResign()
+	{
+		RecordAcceptedAction(MatchActionType.Resign, ActivePlayerIndex, Vector2.zero, 1f);
+		SetPlayerResignedState(ActivePlayerIndex, true);
+		SetPlayerMoveRight(ActivePlayerIndex, false);
+
+		int alivePlayers = 0;
+		for(int i = 0; i < PlayerCount; ++i)
+		{
+			if(!IsPlayerResigned(i))
+				alivePlayers += 1;
+		}
+
+		if(alivePlayers <= 1)
+		{
+			EndMatch();
+			return;
+		}
+
+		if(UseContinuousPlacement || isEnded)
+			return;
+
+		if(CurrentPlayerIndex == ActivePlayerIndex || !CanPlayerMove(CurrentPlayerIndex))
+		{
+			int nextPlayer = FindNextNonResignedPlayerIndex(CurrentPlayerIndex);
+			if(nextPlayer >= 0)
+				CurrentPlayerIndex = nextPlayer;
+		}
+
+		BeginMoveWindow();
+	}
+
+	void ClearAllScoringRequestStates()
+	{
+		for(int i = 0; i < PlayerCount; ++i)
+			SetPlayerScoringRequestState(i, false);
+	}
+
+	int FindNextNonResignedPlayerIndex(int startIndex)
+	{
+		if(PlayerCount <= 0)
+			return -1;
+
+		for(int i = 0; i < PlayerCount; ++i)
+		{
+			int idx = ((startIndex + i) % PlayerCount + PlayerCount) % PlayerCount;
+			if(!IsPlayerResigned(idx))
+				return idx;
+		}
+
+		return -1;
+	}
+
+	void RecordAcceptedAction(MatchActionType actionType, int playerIndex, Vector2 position, float strength)
+	{
+		hasLastAcceptedAction = true;
+		lastAcceptedActionType = actionType;
+		lastAcceptedActionPosition = position;
+		lastAcceptedActionStrength = Mathf.Max(0.0001f, strength);
+	}
 
 	bool TryPreviewStone(Vector2 position)
 	{
@@ -198,6 +481,7 @@ public abstract class Match : MonoBehaviour
 			return false;
 
 		BoardState state = board.State;
+		int previewPlayerIndex = ActivePlayerIndex;
 
 		if(IsOccupiedAtAbsolutePosition(board, state, position))
 		{
@@ -215,7 +499,7 @@ public abstract class Match : MonoBehaviour
 		}
 
 		BoardState previewState = new(state);
-		previewState.AddStone(currentPlayerIndex, position);
+		previewState.AddStone(previewPlayerIndex, position, activePlacementStrength);
 		board.ShowPreview(previewState);
 		return true;
 	}
@@ -234,10 +518,7 @@ public abstract class Match : MonoBehaviour
 		if(renderState == null || board == null || board.Caches == null || !board.Caches.isInitialized)
 			return;
 
-		Color[] playerColors = new Color[Mathf.Min(PlayerCount, BoardUtility.MaxPlayers)];
-		for(int i = 0; i < playerColors.Length; ++i)
-			playerColors[i] = PlayerInfos[i].color;
-		BoardUtility.RenderAnalysis(board.Caches, renderState, playerColors);
+		BoardUtility.RenderForGameplayQuery(board.Caches, renderState);
 	}
 	#endregion
 
@@ -268,11 +549,88 @@ public abstract class Match : MonoBehaviour
 		}
 	}
 
-	protected int TurnSequence => turnSeq;
+	public bool IsPlayerLocallyControllable(int playerIndex)
+	{
+		if(isEnded || players.Count == 0)
+			return false;
+		if(playerIndex < 0 || playerIndex >= players.Count)
+			return false;
+		return players[playerIndex].CanReceiveLocalInput;
+	}
+
+	public virtual bool UseContinuousPlacement => false;
+	public virtual bool SupportsPassAction => !UseContinuousPlacement;
+	public virtual bool SupportsRequestScoringAction => false;
+	public virtual bool SupportsResignAction => false;
+	public virtual float ContinuousPlacementFrequencyPerSecond => 0f;
+	public virtual float ContinuousPlacementMaxWeightPerSecond => 1f;
+	public float PlacementStrengthPerPlacement
+	{
+		get
+		{
+			if(!UseContinuousPlacement)
+				return 1f;
+
+			float frequency = Mathf.Max(1f, ContinuousPlacementFrequencyPerSecond);
+			float maxWeightPerSecond = Mathf.Max(0.0001f, ContinuousPlacementMaxWeightPerSecond);
+			return maxWeightPerSecond / frequency;
+		}
+	}
 
 	public virtual int GetCurrentTurnNumber()
 	{
 		return -1;
+	}
+
+	public virtual void OnRequestScoringButtonClicked()
+	{
+		if(!TryResolveLocalActionPlayerIndex(out int playerIndex))
+			return;
+
+		TrySubmitSystemAction(playerIndex, MatchActionType.RequestScoring);
+	}
+
+	public virtual void OnResignButtonClicked()
+	{
+		if(!TryResolveLocalActionPlayerIndex(out int playerIndex))
+			return;
+
+		TrySubmitSystemAction(playerIndex, MatchActionType.Resign);
+	}
+
+	public bool TrySubmitSystemAction(int playerIndex, MatchActionType actionType)
+	{
+		if(IsEnded)
+			return false;
+		if(playerIndex < 0 || playerIndex >= PlayerCount)
+			return false;
+		if(actionType == MatchActionType.RequestScoring && !SupportsRequestScoringAction)
+			return false;
+		if(actionType == MatchActionType.Resign && !SupportsResignAction)
+			return false;
+		if(IsPlayerResigned(playerIndex))
+			return false;
+		if(actionType == MatchActionType.RequestScoring && IsPlayerScoringRequested(playerIndex))
+			return false;
+
+		if(TryApplyPredictedActionAndSendRequest(playerIndex, actionType, Vector2.zero))
+			return true;
+
+		switch(actionType)
+		{
+			case MatchActionType.RequestScoring:
+				ReceiveRequestScoring(playerIndex);
+				break;
+			case MatchActionType.Resign:
+				ReceiveResign(playerIndex);
+				break;
+			default:
+				return false;
+		}
+
+		if(ShouldBroadcastAuthorityResult())
+			BroadcastAcceptedAuthorityMessages(playerIndex);
+		return true;
 	}
 
 	protected Action<int> onCurrentPlayerChanged;
@@ -282,20 +640,113 @@ public abstract class Match : MonoBehaviour
 		remove => onCurrentPlayerChanged -= value;
 	}
 
-	protected Action<int, bool> onPlayerPassStateChanged;
-	public event Action<int, bool> OnPlayerPassStateChanged
+	protected Action onPlayerPassStateChanged;
+	public event Action OnPlayerPassStateChanged
 	{
 		add => onPlayerPassStateChanged += value;
 		remove => onPlayerPassStateChanged -= value;
 	}
 
+	protected Action onPlayerMoveRightChanged;
+	public event Action OnPlayerMoveRightChanged
+	{
+		add => onPlayerMoveRightChanged += value;
+		remove => onPlayerMoveRightChanged -= value;
+	}
+
+	protected Action onPlayerScoringRequestStateChanged;
+	public event Action OnPlayerScoringRequestStateChanged
+	{
+		add => onPlayerScoringRequestStateChanged += value;
+		remove => onPlayerScoringRequestStateChanged -= value;
+	}
+
+	protected Action onPlayerResignedStateChanged;
+	public event Action OnPlayerResignedStateChanged
+	{
+		add => onPlayerResignedStateChanged += value;
+		remove => onPlayerResignedStateChanged -= value;
+	}
+
+	public IReadOnlyDictionary<int, bool> PlayerMoveRights => playerMoveRights;
+	public IReadOnlyDictionary<int, bool> PlayerPassStates => playerPassStates;
+	public IReadOnlyDictionary<int, bool> PlayerScoringRequestStates => playerScoringRequestStates;
+	public IReadOnlyDictionary<int, bool> PlayerResignedStates => playerResignedStates;
+
 	protected void SetPlayerPassState(int playerIndex, bool passed)
 	{
-		if(playerPassStates == null || playerPassStates.Length != PlayerCount)
-			playerPassStates = new bool[PlayerCount];
-		if(playerIndex >= 0 && playerIndex < playerPassStates.Length)
-			playerPassStates[playerIndex] = passed;
-		onPlayerPassStateChanged?.Invoke(playerIndex, passed);
+		if(playerIndex < 0 || playerIndex >= PlayerCount)
+			return;
+
+		bool previous = playerPassStates.TryGetValue(playerIndex, out bool existing) && existing;
+		bool changed = previous != passed;
+		playerPassStates[playerIndex] = passed;
+		if(changed)
+			onPlayerPassStateChanged?.Invoke();
+	}
+
+	protected void SetPlayerScoringRequestState(int playerIndex, bool requested)
+	{
+		if(playerIndex < 0 || playerIndex >= PlayerCount)
+			return;
+
+		bool previous = playerScoringRequestStates.TryGetValue(playerIndex, out bool existing) && existing;
+		bool changed = previous != requested;
+		playerScoringRequestStates[playerIndex] = requested;
+		if(changed)
+			onPlayerScoringRequestStateChanged?.Invoke();
+	}
+
+	protected void SetPlayerResignedState(int playerIndex, bool resigned)
+	{
+		if(playerIndex < 0 || playerIndex >= PlayerCount)
+			return;
+
+		bool previous = playerResignedStates.TryGetValue(playerIndex, out bool existing) && existing;
+		bool changed = previous != resigned;
+		playerResignedStates[playerIndex] = resigned;
+		if(changed)
+			onPlayerResignedStateChanged?.Invoke();
+	}
+
+	public bool IsPlayerScoringRequested(int playerIndex)
+	{
+		if(playerIndex < 0 || playerIndex >= PlayerCount)
+			return false;
+		return playerScoringRequestStates.TryGetValue(playerIndex, out bool requested) && requested;
+	}
+
+	public bool IsPlayerResigned(int playerIndex)
+	{
+		if(playerIndex < 0 || playerIndex >= PlayerCount)
+			return false;
+		return playerResignedStates.TryGetValue(playerIndex, out bool resigned) && resigned;
+	}
+
+	bool TryResolveLocalActionPlayerIndex(out int playerIndex)
+	{
+		for(int i = 0; i < PlayerCount; ++i)
+		{
+			if(!IsPlayerLocallyControllable(i))
+				continue;
+			if(CanPlayerMove(i))
+			{
+				playerIndex = i;
+				return true;
+			}
+		}
+
+		for(int i = 0; i < PlayerCount; ++i)
+		{
+			if(IsPlayerLocallyControllable(i))
+			{
+				playerIndex = i;
+				return true;
+			}
+		}
+
+		playerIndex = -1;
+		return false;
 	}
 
 	protected void StepPlayerIndex()
@@ -303,13 +754,42 @@ public abstract class Match : MonoBehaviour
 		CurrentPlayerIndex = (CurrentPlayerIndex + 1) % PlayerCount;
 	}
 
+	public bool CanPlayerMove(int playerIndex)
+	{
+		if(playerIndex < 0)
+			return false;
+		return playerMoveRights.TryGetValue(playerIndex, out bool canMove) && canMove;
+	}
+
+	protected int RuntimePlayerCount => players.Count;
+
+	protected void SetPlayerMoveRight(int playerIndex, bool canMove)
+	{
+		if(playerIndex < 0 || playerIndex >= players.Count)
+			return;
+
+		bool previous = playerMoveRights.TryGetValue(playerIndex, out bool existing) && existing;
+		bool changed = previous != canMove;
+		playerMoveRights[playerIndex] = canMove;
+		players[playerIndex]?.SetMoveRight(canMove);
+		if(changed)
+			onPlayerMoveRightChanged?.Invoke();
+	}
+
 	void InitializePlayers()
 	{
 		players.Clear();
-		playerPassStates = new bool[PlayerCount];
+		playerPassStates.Clear();
+		playerScoringRequestStates.Clear();
+		playerResignedStates.Clear();
+		playerMoveRights.Clear();
 
 		for(int i = 0; i < PlayerCount; ++i)
 		{
+			playerPassStates[i] = false;
+			playerScoringRequestStates[i] = false;
+			playerResignedStates[i] = false;
+			playerMoveRights[i] = false;
 			MatchPlayer player = CreateRuntimePlayer(i);
 			if(player == null)
 				throw new MissingReferenceException($"Failed to create player runtime for index {i}.");
@@ -394,12 +874,10 @@ public abstract class Match : MonoBehaviour
 
 	void OnPlayerMadeMove(int playerIndex)
 	{
-		if(playerIndex != CurrentPlayerIndex)
+		if(!CanPlayerMakeMoveNow(playerIndex))
 			return;
 
-		turnSeq += 1;
-		if(!isEnded)
-			StepPlayerIndex();
+		OnPlayerMoveAccepted(playerIndex);
 
 		// Try shrinking the board if enabled
 		if(!isEnded && Rule.useShrinking)
@@ -407,29 +885,67 @@ public abstract class Match : MonoBehaviour
 			Board board = Board.Current;
 			if(board != null)
 			{
-				BoardState shrunkState = board.TryShrink(board.State, Rule.shrinkSpeed);
-				if(shrunkState == null)
+				float shrinkDeltaMargin = GetShrinkDeltaMarginForAcceptedMove();
+				if(shrinkDeltaMargin > 0f)
 				{
-					EndMatch();
-					if(ShouldBroadcastAuthorityResult())
-						BroadcastAuthorityResult(true, null, playerIndex, pendingAuthorityActionSeq);
-					pendingAuthorityActionSeq = 0;
-					return;
+					BoardState shrunkState = board.TryShrink(board.State, shrinkDeltaMargin);
+					if(shrunkState == null)
+					{
+						EndMatch();
+						if(ShouldBroadcastAuthorityResult())
+							BroadcastAcceptedAuthorityMessages(playerIndex);
+						ClearPendingAuthorityContext();
+						hasLastAcceptedAction = false;
+						return;
+					}
+					board.SetState(shrunkState);
 				}
-				board.SetState(shrunkState);
 			}
 		}
 
 		if(ShouldBroadcastAuthorityResult())
-			BroadcastAuthorityResult(true, null, playerIndex, pendingAuthorityActionSeq);
+			BroadcastAcceptedAuthorityMessages(playerIndex);
 
-		pendingAuthorityActionSeq = 0;
+		ClearPendingAuthorityContext();
+		hasLastAcceptedAction = false;
 
-		if(!isEnded)
-			BeginCurrentPlayerTurn();
+		if(!isEnded && !UseContinuousPlacement)
+			BeginMoveWindow();
 	}
 
-	void BeginCurrentPlayerTurn()
+	/// <summary>
+	/// Defines whether a player is currently allowed to make a move.
+	/// Default behavior is strict turn-based: only CurrentPlayerIndex can act.
+	/// </summary>
+	protected virtual bool CanPlayerMakeMoveNow(int playerIndex)
+	{
+		return playerIndex == CurrentPlayerIndex;
+	}
+
+	/// <summary>
+	/// Called once after a valid move has been accepted from a player.
+	/// Default behavior increments turn sequence and advances to next player.
+	/// </summary>
+	protected virtual void OnPlayerMoveAccepted(int playerIndex)
+	{
+		if(!isEnded)
+			StepPlayerIndex();
+	}
+
+	/// <summary>
+	/// Returns the board-margin shrink amount to apply after an accepted move.
+	/// Default behavior keeps the legacy per-move interpretation.
+	/// </summary>
+	protected virtual float GetShrinkDeltaMarginForAcceptedMove()
+	{
+		return Mathf.Max(0f, Rule.shrinkSpeed);
+	}
+
+	/// <summary>
+	/// Grants move rights for the next move window.
+	/// Default behavior cancels all players and grants only the current player.
+	/// </summary>
+	protected virtual void BeginMoveWindow()
 	{
 		if(isEnded || players.Count == 0)
 			return;
@@ -441,9 +957,7 @@ public abstract class Match : MonoBehaviour
 		if(!IsCurrentPlayerLocallyControllable)
 			Board.Current?.ClearPreview();
 
-		BoardState state = Board.Current?.State;
-		BoardState snapshot = state != null ? new BoardState(state) : null;
-		players[safeIndex].RequestMove(snapshot);
+		SetPlayerMoveRight(safeIndex, true);
 	}
 
 	bool ShouldBroadcastAuthorityResult()
@@ -451,27 +965,174 @@ public abstract class Match : MonoBehaviour
 		return Lobby.Current != null && Lobby.Current.IsOnline && Lobby.Current.IsHost && matchTransport != null;
 	}
 
-	void BroadcastAuthorityResult(bool accepted, string reason, int playerIndex, int actionSeq)
+	void SendAuthorityResult(MatchActionResult result, PlayerLocator targetPlayerLocator)
+	{
+		if(!ShouldBroadcastAuthorityResult())
+			return;
+		if(!targetPlayerLocator.IsValid)
+			return;
+
+		matchTransport.SendActionResult(result, targetPlayerLocator);
+	}
+
+	void BroadcastAuthorityResult(MatchActionResult result, PlayerLocator excludedPlayerLocator)
 	{
 		if(!ShouldBroadcastAuthorityResult())
 			return;
 
-		MatchActionResult result = new MatchActionResult
+		matchTransport.BroadcastActionResult(result, excludedPlayerLocator);
+	}
+
+	MatchFlowSnapshot BuildFlowSnapshot()
+	{
+		return new MatchFlowSnapshot
 		{
+			currentPlayerIndex = CurrentPlayerIndex,
+			isEnded = isEnded,
+			passStates = BuildPassStateArray(),
+			scoringRequestStates = BuildScoringRequestStateArray(),
+			resignedStates = BuildResignedStateArray(),
+		};
+	}
+
+	MatchActionResult CreateSnapshotResult(MatchResultKind resultKind, bool accepted, string reason, int playerIndex, int actionSeq)
+	{
+		return new MatchActionResult
+		{
+			resultKind = resultKind,
 			accepted = accepted,
 			reason = reason,
 			playerIndex = playerIndex,
 			actionSeq = actionSeq,
 			boardSnapshot = NetworkSnapshotUtility.BuildBoardSnapshot(Board.Current?.State),
-			flowSnapshot = new MatchFlowSnapshot
-			{
-				currentPlayerIndex = CurrentPlayerIndex,
-				turnSeq = turnSeq,
-				isEnded = isEnded,
-				passStates = playerPassStates != null ? (bool[])playerPassStates.Clone() : null,
-			},
+			flowSnapshot = BuildFlowSnapshot(),
 		};
-		matchTransport.BroadcastActionResult(result);
+	}
+
+	MatchActionResult CreateDeltaResult(int playerIndex)
+	{
+		MatchActionResult result = new MatchActionResult
+		{
+			resultKind = MatchResultKind.DeltaPush,
+			accepted = true,
+			reason = null,
+			playerIndex = playerIndex,
+			actionSeq = pendingAuthorityActionSeq,
+			sourcePlayerLocator = pendingAuthoritySourceLocator,
+			flowSnapshot = BuildFlowSnapshot(),
+		};
+
+		if(hasPendingAuthorityAction)
+		{
+			result.deltaOps.Add(new MatchDeltaOp
+			{
+				opType = pendingAuthorityActionType switch
+				{
+					MatchActionType.Place => MatchDeltaOpType.Place,
+					MatchActionType.Remove => MatchDeltaOpType.Remove,
+					MatchActionType.RequestScoring => MatchDeltaOpType.RequestScoring,
+					MatchActionType.Resign => MatchDeltaOpType.Resign,
+					_ => MatchDeltaOpType.Pass,
+				},
+				playerIndex = playerIndex,
+				position = pendingAuthorityActionPosition,
+				strength = Mathf.Max(0.0001f, pendingAuthorityActionStrength),
+			});
+		}
+		else if(hasLastAcceptedAction)
+		{
+			result.deltaOps.Add(new MatchDeltaOp
+			{
+				opType = lastAcceptedActionType switch
+				{
+					MatchActionType.Place => MatchDeltaOpType.Place,
+					MatchActionType.Remove => MatchDeltaOpType.Remove,
+					MatchActionType.RequestScoring => MatchDeltaOpType.RequestScoring,
+					MatchActionType.Resign => MatchDeltaOpType.Resign,
+					_ => MatchDeltaOpType.Pass,
+				},
+				playerIndex = playerIndex,
+				position = lastAcceptedActionPosition,
+				strength = Mathf.Max(0.0001f, lastAcceptedActionStrength),
+			});
+		}
+
+		return result;
+	}
+
+	void ClearPendingAuthorityContext()
+	{
+		pendingAuthorityActionSeq = 0;
+		pendingAuthoritySourceLocator = default;
+		pendingAuthorityActionType = MatchActionType.Pass;
+		pendingAuthorityActionPosition = Vector2.zero;
+		pendingAuthorityActionStrength = 1f;
+		hasPendingAuthorityAction = false;
+	}
+
+	void BroadcastAcceptedAuthorityMessages(int playerIndex)
+	{
+		if(!ShouldBroadcastAuthorityResult())
+			return;
+
+		if(hasPendingAuthorityAction && pendingAuthoritySourceLocator.IsValid)
+		{
+			MatchActionResult ack = CreateSnapshotResult(MatchResultKind.ActionAck, true, null, playerIndex, pendingAuthorityActionSeq);
+			ack.targetPlayerLocator = pendingAuthoritySourceLocator;
+			ack.sourcePlayerLocator = pendingAuthoritySourceLocator;
+			ack.boardSnapshot = null;
+			SendAuthorityResult(ack, pendingAuthoritySourceLocator);
+
+			MatchActionResult delta = CreateDeltaResult(playerIndex);
+			BroadcastAuthorityResult(delta, pendingAuthoritySourceLocator);
+			return;
+		}
+
+		MatchActionResult hostDelta = CreateDeltaResult(playerIndex);
+		BroadcastAuthorityResult(hostDelta, default);
+	}
+
+	void SendSnapshotToClient(PlayerLocator targetPlayerLocator)
+	{
+		if(!targetPlayerLocator.IsValid)
+			return;
+
+		MatchActionResult snapshot = CreateSnapshotResult(MatchResultKind.SnapshotPush, true, null, -1, 0);
+		snapshot.targetPlayerLocator = targetPlayerLocator;
+		SendAuthorityResult(snapshot, targetPlayerLocator);
+	}
+
+	bool[] BuildPassStateArray()
+	{
+		if(PlayerCount <= 0)
+			return Array.Empty<bool>();
+
+		bool[] states = new bool[PlayerCount];
+		for(int i = 0; i < states.Length; ++i)
+			states[i] = playerPassStates.TryGetValue(i, out bool passed) && passed;
+		return states;
+	}
+
+	bool[] BuildScoringRequestStateArray()
+	{
+		if(PlayerCount <= 0)
+			return Array.Empty<bool>();
+
+		bool[] states = new bool[PlayerCount];
+		for(int i = 0; i < states.Length; ++i)
+			states[i] = playerScoringRequestStates.TryGetValue(i, out bool requested) && requested;
+		return states;
+	}
+
+	bool[] BuildResignedStateArray()
+	{
+		if(PlayerCount <= 0)
+			return Array.Empty<bool>();
+
+		bool[] states = new bool[PlayerCount];
+		for(int i = 0; i < states.Length; ++i)
+			states[i] = playerResignedStates.TryGetValue(i, out bool resigned) && resigned;
+		return states;
 	}
 
 	void InitializeNetworkTransport()
@@ -514,91 +1175,324 @@ public abstract class Match : MonoBehaviour
 		if(request == null || Lobby.Current == null || !Lobby.Current.IsHost)
 			return;
 
+		if(request.requestKind == MatchRequestKind.SnapshotPull)
+		{
+			SendSnapshotToClient(request.playerLocator);
+			return;
+		}
+
 		int playerIndex = Lobby.Current.Players.FindIndex(p => p != null && p.locator == request.playerLocator);
 		if(playerIndex < 0)
 		{
-			BroadcastAuthorityResult(false, "unknown-player", -1, request.actionSeq);
+			MatchActionResult reject = CreateSnapshotResult(MatchResultKind.ActionReject, false, "unknown-player", -1, request.actionSeq);
+			reject.targetPlayerLocator = request.playerLocator;
+			SendAuthorityResult(reject, request.playerLocator);
 			return;
 		}
 
-		if(playerIndex != CurrentPlayerIndex)
+		if(IsMoveWindowBoundAction(request.actionType) && !CanPlayerMakeMoveNow(playerIndex))
 		{
-			BroadcastAuthorityResult(false, "not-current-player", playerIndex, request.actionSeq);
-			return;
-		}
-
-		if(request.turnSeq != turnSeq)
-		{
-			BroadcastAuthorityResult(false, "turn-seq-mismatch", playerIndex, request.actionSeq);
+			MatchActionResult reject = CreateSnapshotResult(MatchResultKind.ActionReject, false, "not-current-player", playerIndex, request.actionSeq);
+			reject.targetPlayerLocator = request.playerLocator;
+			SendAuthorityResult(reject, request.playerLocator);
 			return;
 		}
 
 		if(!(players[playerIndex] is OnlinePlayer onlinePlayer))
 		{
-			BroadcastAuthorityResult(false, "player-is-not-online-proxy", playerIndex, request.actionSeq);
+			MatchActionResult reject = CreateSnapshotResult(MatchResultKind.ActionReject, false, "player-is-not-online-proxy", playerIndex, request.actionSeq);
+			reject.targetPlayerLocator = request.playerLocator;
+			SendAuthorityResult(reject, request.playerLocator);
 			return;
 		}
 
 		pendingAuthorityActionSeq = request.actionSeq;
+		pendingAuthoritySourceLocator = request.playerLocator;
+		pendingAuthorityActionType = request.actionType;
+		pendingAuthorityActionPosition = request.position;
+		pendingAuthorityActionStrength = request.strength;
+		hasPendingAuthorityAction = true;
 		bool handled = onlinePlayer.TryHandleRemoteRequest(request);
 		if(!handled)
 		{
-			pendingAuthorityActionSeq = 0;
-			BroadcastAuthorityResult(false, "invalid-action", playerIndex, request.actionSeq);
+			ClearPendingAuthorityContext();
+			MatchActionResult reject = CreateSnapshotResult(MatchResultKind.ActionReject, false, "invalid-action", playerIndex, request.actionSeq);
+			reject.targetPlayerLocator = request.playerLocator;
+			SendAuthorityResult(reject, request.playerLocator);
 			return;
 		}
 
-		if(request.actionType == MatchActionType.Remove)
+		if(IsSystemOnlyAction(request.actionType))
 		{
-			BroadcastAuthorityResult(true, null, playerIndex, request.actionSeq);
-			pendingAuthorityActionSeq = 0;
+			BroadcastAcceptedAuthorityMessages(playerIndex);
+			ClearPendingAuthorityContext();
+			hasLastAcceptedAction = false;
 		}
+	}
+
+	bool IsMoveWindowBoundAction(MatchActionType actionType)
+	{
+		if(actionType == MatchActionType.Pass)
+			return true;
+
+		if(actionType == MatchActionType.Place)
+			return !UseContinuousPlacement;
+
+		return false;
+	}
+
+	bool IsSystemOnlyAction(MatchActionType actionType)
+	{
+		return actionType == MatchActionType.Remove
+			|| actionType == MatchActionType.RequestScoring
+			|| actionType == MatchActionType.Resign;
 	}
 
 	void OnNetworkActionResult(MatchActionResult result)
 	{
 		if(result == null)
 			return;
+		if(result.targetPlayerLocator.IsValid && Lobby.Current != null && result.targetPlayerLocator != Lobby.Current.LocalPlayerLocator)
+			return;
+
+		switch(result.resultKind)
+		{
+			case MatchResultKind.ActionReject:
+				pendingLocalActionSeqs.Remove(result.actionSeq);
+				pendingLocalActions.Clear();
+				RestoreResolvedSnapshotLocally();
+				RequestLatestSnapshotFromHost();
+				if(!UseContinuousPlacement)
+					BeginMoveWindow();
+				return;
+			case MatchResultKind.ActionAck:
+				pendingLocalActionSeqs.Remove(result.actionSeq);
+				RemovePendingLocalActionBySequence(result.actionSeq);
+				ApplyFlowSnapshot(result.flowSnapshot);
+				return;
+			case MatchResultKind.DeltaPush:
+				ApplyDeltaResult(result);
+				ApplyFlowSnapshot(result.flowSnapshot);
+				if(pendingLocalActions.Count == 0)
+					CaptureResolvedSnapshotFromCurrentState();
+				return;
+			case MatchResultKind.SnapshotPush:
+				ApplySnapshotResult(result);
+				return;
+		}
 
 		if(result.accepted)
 		{
-			BoardState syncedState = NetworkSnapshotUtility.ToBoardState(result.boardSnapshot);
-			if(Board.Current != null && syncedState != null)
-			{
-				Board.Current.SetState(syncedState);
-				onStateChanged?.Invoke();
-			}
-
-			if(result.flowSnapshot != null)
-			{
-				turnSeq = result.flowSnapshot.turnSeq;
-				CurrentPlayerIndex = result.flowSnapshot.currentPlayerIndex;
-				bool[] passStates = result.flowSnapshot.passStates;
-				if(passStates != null)
-				{
-					for(int i = 0; i < PlayerCount; ++i)
-						SetPlayerPassState(i, i < passStates.Length && passStates[i]);
-				}
-
-				if(result.flowSnapshot.isEnded && !isEnded)
-				{
-					isEnded = true;
-					CancelAllPlayers();
-					onEnd?.Invoke();
-				}
-				else if(!result.flowSnapshot.isEnded && !isEnded)
-				{
-					BeginCurrentPlayerTurn();
-				}
-			}
+			ApplySnapshotResult(result);
 		}
 		else
 		{
-			BeginCurrentPlayerTurn();
+			pendingLocalActionSeqs.Remove(result.actionSeq);
+			pendingLocalActions.Clear();
+			RestoreResolvedSnapshotLocally();
+			RequestLatestSnapshotFromHost();
+			if(!UseContinuousPlacement)
+				BeginMoveWindow();
 		}
 	}
 
-	public bool TrySendPlayerActionRequest(int playerIndex, MatchActionType actionType, Vector2 position)
+	void ApplyDeltaResult(MatchActionResult result)
+	{
+		if(Board.Current == null || result.deltaOps == null || result.deltaOps.Count == 0)
+			return;
+
+		for(int i = 0; i < result.deltaOps.Count; ++i)
+		{
+			MatchDeltaOp op = result.deltaOps[i];
+			switch(op.opType)
+			{
+				case MatchDeltaOpType.Place:
+					ReceivePlace(op.playerIndex, op.position, op.strength);
+					break;
+				case MatchDeltaOpType.Remove:
+					ReceiveRemove(op.playerIndex, op.position);
+					break;
+				case MatchDeltaOpType.Pass:
+					ReceivePass(op.playerIndex);
+					break;
+				case MatchDeltaOpType.RequestScoring:
+					ReceiveRequestScoring(op.playerIndex);
+					break;
+				case MatchDeltaOpType.Resign:
+					ReceiveResign(op.playerIndex);
+					break;
+			}
+		}
+
+		onStateChanged?.Invoke();
+	}
+
+	void ApplySnapshotResult(MatchActionResult result)
+	{
+		BoardState syncedState = NetworkSnapshotUtility.ToBoardState(result.boardSnapshot);
+		if(Board.Current != null && syncedState != null)
+		{
+			Board.Current.SetState(syncedState);
+			onStateChanged?.Invoke();
+		}
+
+		ApplyFlowSnapshot(result.flowSnapshot);
+		pendingLocalActionSeqs.Clear();
+		pendingLocalActions.Clear();
+		CaptureResolvedSnapshotFromCurrentState();
+	}
+
+	void ApplyFlowSnapshot(MatchFlowSnapshot flowSnapshot)
+	{
+		if(flowSnapshot == null)
+			return;
+
+		CurrentPlayerIndex = flowSnapshot.currentPlayerIndex;
+		bool[] passStates = flowSnapshot.passStates;
+		if(passStates != null)
+		{
+			for(int i = 0; i < PlayerCount; ++i)
+				SetPlayerPassState(i, i < passStates.Length && passStates[i]);
+		}
+
+		bool[] scoringRequestStates = flowSnapshot.scoringRequestStates;
+		if(scoringRequestStates != null)
+		{
+			for(int i = 0; i < PlayerCount; ++i)
+				SetPlayerScoringRequestState(i, i < scoringRequestStates.Length && scoringRequestStates[i]);
+		}
+
+		bool[] resignedStates = flowSnapshot.resignedStates;
+		if(resignedStates != null)
+		{
+			for(int i = 0; i < PlayerCount; ++i)
+				SetPlayerResignedState(i, i < resignedStates.Length && resignedStates[i]);
+		}
+
+		if(flowSnapshot.isEnded && !isEnded)
+		{
+			FinalizeMatchEnd();
+		}
+		else if(!flowSnapshot.isEnded && !isEnded && !UseContinuousPlacement)
+		{
+			BeginMoveWindow();
+		}
+	}
+
+	public bool RequestLatestSnapshotFromHost()
+	{
+		if(Lobby.Current == null || !Lobby.Current.IsOnline || Lobby.Current.IsHost)
+			return false;
+		if(GameManager.Instance == null || GameManager.Instance.MatchTransport == null)
+			return false;
+
+		MatchActionRequest request = new MatchActionRequest
+		{
+			requestKind = MatchRequestKind.SnapshotPull,
+			playerLocator = Lobby.Current.LocalPlayerLocator,
+			playerIndex = -1,
+			actionType = MatchActionType.Pass,
+			position = Vector2.zero,
+			strength = 1f,
+			actionSeq = nextActionSeq++,
+		};
+		GameManager.Instance.MatchTransport.SendActionRequest(request);
+		return true;
+	}
+
+	public bool TryApplyPredictedActionAndSendRequest(int playerIndex, MatchActionType actionType, Vector2 position, float strength = 1f)
+	{
+		if(Lobby.Current == null || !Lobby.Current.IsOnline || Lobby.Current.IsHost)
+			return false;
+		if(GameManager.Instance == null || GameManager.Instance.MatchTransport == null)
+			return false;
+		if(playerIndex < 0 || playerIndex >= Lobby.Current.Players.Count)
+			return false;
+		if(pendingLocalActions.Count >= MaxPendingLocalActions)
+		{
+			return false;
+		}
+		if(pendingLocalActions.Count == 0)
+			CaptureResolvedSnapshotFromCurrentState();
+
+		bool applied = actionType switch
+		{
+			MatchActionType.Place => ReceivePlace(playerIndex, position, strength),
+			MatchActionType.Pass => true,
+			MatchActionType.Remove => true,
+			MatchActionType.RequestScoring => true,
+			MatchActionType.Resign => true,
+			_ => false,
+		};
+		if(!applied)
+			return false;
+
+		if(actionType == MatchActionType.Pass)
+			ReceivePass(playerIndex);
+		else if(actionType == MatchActionType.Remove)
+			ReceiveRemove(playerIndex, position);
+		else if(actionType == MatchActionType.RequestScoring)
+			ReceiveRequestScoring(playerIndex);
+		else if(actionType == MatchActionType.Resign)
+			ReceiveResign(playerIndex);
+
+		int actionSeq = nextActionSeq++;
+		MatchActionRequest request = new MatchActionRequest
+		{
+			requestKind = MatchRequestKind.Action,
+			playerLocator = Lobby.Current.Players[playerIndex].locator,
+			playerIndex = playerIndex,
+			actionType = actionType,
+			position = position,
+			strength = strength,
+			actionSeq = actionSeq,
+		};
+		GameManager.Instance.MatchTransport.SendActionRequest(request);
+		pendingLocalActionSeqs.Add(actionSeq);
+		pendingLocalActions.Add(new PendingLocalAction
+		{
+			actionSeq = actionSeq,
+			playerIndex = playerIndex,
+			actionType = actionType,
+			position = position,
+			strength = Mathf.Max(0.0001f, strength),
+		});
+		return true;
+	}
+
+	void CaptureResolvedSnapshotFromCurrentState()
+	{
+		lastResolvedBoardSnapshot = NetworkSnapshotUtility.BuildBoardSnapshot(Board.Current?.State);
+		lastResolvedFlowSnapshot = BuildFlowSnapshot();
+	}
+
+	void RemovePendingLocalActionBySequence(int actionSeq)
+	{
+		for(int i = pendingLocalActions.Count - 1; i >= 0; --i)
+		{
+			if(pendingLocalActions[i].actionSeq <= actionSeq)
+				pendingLocalActions.RemoveAt(i);
+		}
+
+		if(pendingLocalActions.Count == 0)
+			CaptureResolvedSnapshotFromCurrentState();
+	}
+
+	void RestoreResolvedSnapshotLocally()
+	{
+		if(lastResolvedBoardSnapshot == null || Board.Current == null)
+			return;
+
+		BoardState resolvedState = NetworkSnapshotUtility.ToBoardState(lastResolvedBoardSnapshot);
+		if(resolvedState == null)
+			return;
+
+		Board.Current.SetState(resolvedState);
+		ApplyFlowSnapshot(lastResolvedFlowSnapshot);
+		onStateChanged?.Invoke();
+	}
+
+	public bool TrySendPlayerActionRequest(int playerIndex, MatchActionType actionType, Vector2 position, float strength = 1f)
 	{
 		if(Lobby.Current == null || !Lobby.Current.IsOnline || Lobby.Current.IsHost)
 			return false;
@@ -609,21 +1503,22 @@ public abstract class Match : MonoBehaviour
 
 		MatchActionRequest request = new MatchActionRequest
 		{
+			requestKind = MatchRequestKind.Action,
 			playerLocator = Lobby.Current.Players[playerIndex].locator,
 			playerIndex = playerIndex,
 			actionType = actionType,
 			position = position,
-			turnSeq = turnSeq,
+			strength = strength,
 			actionSeq = nextActionSeq++,
 		};
 		GameManager.Instance.MatchTransport.SendActionRequest(request);
 		return true;
 	}
 
-	void CancelAllPlayers()
+	protected void CancelAllPlayers()
 	{
 		for(int i = 0; i < players.Count; ++i)
-			players[i]?.CancelMove();
+			SetPlayerMoveRight(i, false);
 	}
 
 	int CountCapturedStones(BoardState oldState, BoardState newState, int placedPlayer)

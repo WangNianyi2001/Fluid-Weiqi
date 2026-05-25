@@ -57,14 +57,33 @@ public class InMemoryMatchTransport : IMatchTransport
 		room.host?.OnActionRequestReceived?.Invoke(request);
 	}
 
-	public void BroadcastActionResult(MatchActionResult result)
+	public void SendActionResult(MatchActionResult result, PlayerLocator targetPlayerLocator)
+	{
+		if(!IsHost || !LobbyLocator.IsValid || !targetPlayerLocator.IsValid)
+			return;
+
+		MatchRoom room = GetOrCreateRoom(LobbyLocator.id);
+		foreach(InMemoryMatchTransport client in room.clients)
+		{
+			if(client.LocalPlayerLocator != targetPlayerLocator)
+				continue;
+			client.OnActionResultReceived?.Invoke(result);
+			return;
+		}
+	}
+
+	public void BroadcastActionResult(MatchActionResult result, PlayerLocator excludedPlayerLocator)
 	{
 		if(!IsHost || !LobbyLocator.IsValid)
 			return;
 
 		MatchRoom room = GetOrCreateRoom(LobbyLocator.id);
 		foreach(InMemoryMatchTransport client in room.clients)
+		{
+			if(excludedPlayerLocator.IsValid && client.LocalPlayerLocator == excludedPlayerLocator)
+				continue;
 			client.OnActionResultReceived?.Invoke(result);
+		}
 	}
 
 	public void SetConnectionState(NetworkConnectionState state)

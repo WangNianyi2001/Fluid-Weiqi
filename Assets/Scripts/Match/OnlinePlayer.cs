@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections;
 
 public enum OnlinePlayerRole
 {
@@ -13,6 +14,7 @@ public class OnlinePlayer : MatchPlayer
 	PlayerLocator playerLocator;
 	bool waitingForRemoteAction;
 	bool receivingLocalMove;
+	Coroutine autoPassCoroutine;
 	MatchInput input;
 
 	public override bool IsAlive => isConnected;
@@ -30,37 +32,58 @@ public class OnlinePlayer : MatchPlayer
 			input.OnCursorEnter += OnCursorEnter;
 			input.OnCursorMove += OnCursorMove;
 			input.OnCursorExit += OnCursorExit;
+			input.OnPrimaryDown += OnPrimaryDown;
+			input.OnPrimaryUp += OnPrimaryUp;
 			input.OnPlace += OnPlace;
 			input.OnRemove += OnRemove;
 			input.OnPass += OnPass;
 		}
 	}
 
-	public override void RequestMove(BoardState state)
+	public override void SetMoveRight(bool canMove)
 	{
-		waitingForRemoteAction = role == OnlinePlayerRole.RemoteToLocal;
-		receivingLocalMove = role == OnlinePlayerRole.LocalToRemote;
-
-		if(receivingLocalMove)
+		if(role == OnlinePlayerRole.RemoteToLocal)
 		{
+			if(canMove == waitingForRemoteAction)
+				return;
+
+			waitingForRemoteAction = canMove;
+
+			if(!canMove)
+			{
+				if(autoPassCoroutine != null)
+				{
+					StopCoroutine(autoPassCoroutine);
+					autoPassCoroutine = null;
+				}
+				return;
+			}
+
 			if(!isConnected)
-				Match.ReceiveCursorExit();
-			return;
+				autoPassCoroutine = StartCoroutine(AutoPassAsync());
 		}
-
-		if(!isConnected && waitingForRemoteAction)
+		else
 		{
-			Match.ReceivePass();
-			NotifyMadeMove();
-			return;
+			if(canMove == receivingLocalMove)
+				return;
+
+			receivingLocalMove = canMove;
+			if(!canMove || !isConnected)
+				EndBrushStrokeSfx();
+
+			if(!canMove || !isConnected)
+				Match.ReceiveCursorExit(PlayerIndex);
 		}
 	}
 
-	public override void CancelMove()
+	public override void Dispose()
 	{
-		waitingForRemoteAction = false;
-		receivingLocalMove = false;
-		Match.ReceiveCursorExit();
+		if(autoPassCoroutine != null)
+		{
+			StopCoroutine(autoPassCoroutine);
+			autoPassCoroutine = null;
+		}
+		base.Dispose();
 	}
 
 	public void SetConnectionState(bool alive)
@@ -68,15 +91,25 @@ public class OnlinePlayer : MatchPlayer
 		bool wasConnected = isConnected;
 		isConnected = alive;
 
-		if(wasConnected && !isConnected && waitingForRemoteAction)
-		{
-			Match.ReceivePass();
-			waitingForRemoteAction = false;
-			NotifyMadeMove();
-		}
+		if(wasConnected && !isConnected && waitingForRemoteAction && autoPassCoroutine == null)
+			autoPassCoroutine = StartCoroutine(AutoPassAsync());
 
 		if(receivingLocalMove && !alive)
-			Match.ReceiveCursorExit();
+			EndBrushStrokeSfx();
+
+		if(receivingLocalMove && !alive)
+			Match.ReceiveCursorExit(PlayerIndex);
+	}
+
+	IEnumerator AutoPassAsync()
+	{
+		yield return null;
+		autoPassCoroutine = null;
+		if(!waitingForRemoteAction || Match.IsEnded)
+			yield break;
+		Match.ReceivePass(PlayerIndex);
+		waitingForRemoteAction = false;
+		NotifyMadeMove();
 	}
 
 	public bool TryHandleRemoteRequest(MatchActionRequest request)
@@ -93,19 +126,29 @@ public class OnlinePlayer : MatchPlayer
 		switch(request.actionType)
 		{
 			case MatchActionType.Place:
-				succeed = Match.ReceivePlace(request.position);
+				succeed = Match.ReceivePlace(PlayerIndex, request.position, request.strength);
 				shouldNotify = !(Match is TrainingMatch);
 				break;
 			case MatchActionType.Pass:
-				Match.ReceivePass();
+				Match.ReceivePass(PlayerIndex);
 				succeed = true;
 				shouldNotify = true;
 				break;
 			case MatchActionType.Remove:
-				Match.ReceiveRemove(request.position);
+				Match.ReceiveRemove(PlayerIndex, request.position);
 				succeed = true;
 				shouldNotify = false;
 				break;
+				case MatchActionType.RequestScoring:
+					Match.ReceiveRequestScoring(PlayerIndex);
+					succeed = true;
+					shouldNotify = false;
+					break;
+				case MatchActionType.Resign:
+					Match.ReceiveResign(PlayerIndex);
+					succeed = true;
+					shouldNotify = false;
+					break;
 			default:
 				succeed = false;
 				break;
@@ -113,7 +156,8 @@ public class OnlinePlayer : MatchPlayer
 
 		if(succeed && shouldNotify)
 		{
-			waitingForRemoteAction = false;
+			if(!Match.UseContinuousPlacement)
+				waitingForRemoteAction = false;
 			NotifyMadeMove();
 		}
 
@@ -128,39 +172,61 @@ public class OnlinePlayer : MatchPlayer
 		input.OnCursorEnter -= OnCursorEnter;
 		input.OnCursorMove -= OnCursorMove;
 		input.OnCursorExit -= OnCursorExit;
+		input.OnPrimaryDown -= OnPrimaryDown;
+		input.OnPrimaryUp -= OnPrimaryUp;
 		input.OnPlace -= OnPlace;
 		input.OnRemove -= OnRemove;
 		input.OnPass -= OnPass;
+	}
+
+	void OnPrimaryDown()
+	{
+		if(!receivingLocalMove || !Match.UseContinuousPlacement)
+			return;
+		AudioManager.Instance?.BeginBrushStroke();
+	}
+
+	void OnPrimaryUp()
+	{
+		if(!Match.UseContinuousPlacement)
+			return;
+		EndBrushStrokeSfx();
+	}
+
+	void EndBrushStrokeSfx()
+	{
+		AudioManager.Instance?.EndBrushStroke();
 	}
 
 	void OnCursorEnter(Vector2 position)
 	{
 		if(!receivingLocalMove)
 			return;
-		Match.ReceiveCursorEnter(position);
+		Match.ReceiveCursorEnter(PlayerIndex, position);
 	}
 
 	void OnCursorMove(Vector2 position)
 	{
 		if(!receivingLocalMove)
 			return;
-		Match.ReceiveCursorMove(position);
+		Match.ReceiveCursorMove(PlayerIndex, position);
 	}
 
 	void OnCursorExit()
 	{
 		if(!receivingLocalMove)
 			return;
-		Match.ReceiveCursorExit();
+		Match.ReceiveCursorExit(PlayerIndex);
 	}
 
 	void OnPlace(Vector2 position)
 	{
 		if(!receivingLocalMove)
 			return;
-		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Place, position))
+		float placementStrength = Match.PlacementStrengthPerPlacement;
+		if(Match.TryApplyPredictedActionAndSendRequest(PlayerIndex, MatchActionType.Place, position, placementStrength))
 		{
-			if(!(Match is TrainingMatch))
+			if(!(Match is TrainingMatch) && !Match.UseContinuousPlacement)
 				receivingLocalMove = false;
 		}
 	}
@@ -169,9 +235,10 @@ public class OnlinePlayer : MatchPlayer
 	{
 		if(!receivingLocalMove)
 			return;
-		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Remove, position))
+		if(Match.TryApplyPredictedActionAndSendRequest(PlayerIndex, MatchActionType.Remove, position))
 		{
-			receivingLocalMove = false;
+			if(!Match.UseContinuousPlacement)
+				receivingLocalMove = false;
 		}
 	}
 
@@ -179,9 +246,10 @@ public class OnlinePlayer : MatchPlayer
 	{
 		if(!receivingLocalMove)
 			return;
-		if(Match.TrySendPlayerActionRequest(PlayerIndex, MatchActionType.Pass, Vector2.zero))
+		if(Match.TryApplyPredictedActionAndSendRequest(PlayerIndex, MatchActionType.Pass, Vector2.zero))
 		{
-			receivingLocalMove = false;
+			if(!Match.UseContinuousPlacement)
+				receivingLocalMove = false;
 		}
 	}
 }
