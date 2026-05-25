@@ -124,6 +124,15 @@ public abstract class Match : MonoBehaviour
 		CancelAllPlayers();
 		onEnd?.Invoke();
 	}
+
+	protected void BroadcastSnapshotToClientsForSystemEvent()
+	{
+		if(!ShouldBroadcastAuthorityResult())
+			return;
+
+		MatchActionResult snapshot = CreateSnapshotResult(MatchResultKind.SnapshotPush, true, null, -1, 0);
+		BroadcastAuthorityResult(snapshot, default);
+	}
 	#endregion
 
 	#region Input
@@ -267,7 +276,12 @@ public abstract class Match : MonoBehaviour
 		board.SetState(nextState);
 		board.ClearPreview(false);
 		RecordAcceptedAction(MatchActionType.Place, ActivePlayerIndex, position, activePlacementStrength);
+		OnPlacementAccepted(ActivePlayerIndex, position, activePlacementStrength);
 		onStateChanged?.Invoke();
+	}
+
+	protected virtual void OnPlacementAccepted(int playerIndex, Vector2 position, float strength)
+	{
 	}
 
 	protected virtual void OnRemove(Vector2 position)
@@ -374,6 +388,9 @@ public abstract class Match : MonoBehaviour
 
 	protected int TurnSequence => turnSeq;
 	public virtual bool UseContinuousPlacement => false;
+	public virtual bool SupportsPassAction => !UseContinuousPlacement;
+	public virtual bool SupportsRequestScoringAction => false;
+	public virtual bool SupportsResignAction => false;
 	public virtual float ContinuousPlacementFrequencyPerSecond => 0f;
 	public virtual float ContinuousPlacementMaxWeightPerSecond => 1f;
 	public float PlacementStrengthPerPlacement
@@ -392,6 +409,14 @@ public abstract class Match : MonoBehaviour
 	public virtual int GetCurrentTurnNumber()
 	{
 		return -1;
+	}
+
+	public virtual void OnRequestScoringButtonClicked()
+	{
+	}
+
+	public virtual void OnResignButtonClicked()
+	{
 	}
 
 	protected Action<int> onCurrentPlayerChanged;

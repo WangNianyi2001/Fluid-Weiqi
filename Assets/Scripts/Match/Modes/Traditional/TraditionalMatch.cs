@@ -2,6 +2,9 @@ using UnityEngine;
 
 public class TraditionalMatch : Match
 {
+	public override bool SupportsRequestScoringAction => true;
+	public override bool SupportsResignAction => true;
+
 	public override int GetCurrentTurnNumber()
 	{
 		return TurnSequence / Mathf.Max(1, PlayerCount) + 1;

@@ -18,7 +18,6 @@ MonoBehaviour:
   legacyMatchModes:
   - {fileID: 11400000, guid: e57dd985eca19df44bf15634ad27a8fb, type: 2}
   - {fileID: 11400000, guid: 5ef5de0c2f5d4a39bd68f76f286ef613, type: 2}
-  - {fileID: 11400000, guid: 2bcae83d97d660f488839c78f4b7c79f, type: 2}
   legacyAis:
   - {fileID: 11400000, guid: 296b6405bad1d49458d5c56bd2246ce8, type: 2}
   - {fileID: 11400000, guid: 4eeb55ebf20adcf4290fae2e269709c8, type: 2}

@@ -5,9 +5,13 @@ public class PaintingMatchModeConfig : MatchModeConfig
 {
 	[SerializeField] float placementFrequencyPerSecond = 12f;
 	[SerializeField] float placementMaxWeightPerSecond = 1f;
+	[SerializeField, Range(0.01f, 1f)] float autoScoringAreaThreshold = 0.5f;
+	[SerializeField] float autoScoringIdleSeconds = 5f;
 
 	public float PlacementFrequencyPerSecond => Mathf.Max(1f, placementFrequencyPerSecond);
 	public float PlacementMaxWeightPerSecond => Mathf.Max(0.0001f, placementMaxWeightPerSecond);
+	public float AutoScoringAreaThreshold => Mathf.Clamp(autoScoringAreaThreshold, 0.01f, 1f);
+	public float AutoScoringIdleSeconds => Mathf.Max(0.2f, autoScoringIdleSeconds);
 
 	public override bool ValidateRules(MatchRule rule, Lobby lobby, out string errorMessage)
 	{

@@ -5,6 +5,13 @@ public class PaintingMatch : Match
 	PaintingMatchModeConfig modeConfig;
 	float pendingShrinkMargin;
 	float lastShrinkSampleTime = -1f;
+	float lastPlacementTime = -1f;
+	float nextAutoScoringSampleTime;
+	bool autoScoringArmed;
+	float autoScoringRemainingSeconds;
+
+	public bool IsAutoScoringArmed => autoScoringArmed;
+	public float AutoScoringRemainingSeconds => Mathf.Max(0f, autoScoringRemainingSeconds);
 
 	PaintingMatchModeConfig GetModeConfig()
 	{
@@ -48,6 +55,8 @@ public class PaintingMatch : Match
 
 		if(lastShrinkSampleTime < 0f)
 			lastShrinkSampleTime = Time.time;
+		if(lastPlacementTime < 0f)
+			lastPlacementTime = Time.unscaledTime;
 
 		CancelAllPlayers();
 		for(int i = 0; i < RuntimePlayerCount; ++i)
@@ -81,7 +90,76 @@ public class PaintingMatch : Match
 		SetPlayerPassState(ActivePlayerIndex, false);
 	}
 
+	protected override void OnPlacementAccepted(int playerIndex, Vector2 position, float strength)
+	{
+		lastPlacementTime = Time.unscaledTime;
+		nextAutoScoringSampleTime = 0f; // force immediate resample next Update
+	}
+
+	protected void Update()
+	{
+		if(IsEnded || Board.Current == null || Board.Current.State == null)
+			return;
+
+		bool canTriggerEnd = Lobby.Current == null || !Lobby.Current.IsOnline || Lobby.Current.IsHost;
+
+		if(Time.unscaledTime < nextAutoScoringSampleTime)
+			return;
+
+		nextAutoScoringSampleTime = Time.unscaledTime + 0.1f;
+
+		PaintingMatchModeConfig config = GetModeConfig();
+		float threshold = config != null ? config.AutoScoringAreaThreshold : 0.5f;
+		float idleSeconds = config != null ? config.AutoScoringIdleSeconds : 5f;
+
+		float occupiedRatio = GetDominanceOccupiedRatio();
+		if(occupiedRatio < threshold)
+		{
+			autoScoringArmed = false;
+			autoScoringRemainingSeconds = idleSeconds;
+			return;
+		}
+
+		autoScoringArmed = true;
+		float elapsedWithoutPlacement = Mathf.Max(0f, Time.unscaledTime - lastPlacementTime);
+		autoScoringRemainingSeconds = Mathf.Max(0f, idleSeconds - elapsedWithoutPlacement);
+		if(autoScoringRemainingSeconds <= 0f && canTriggerEnd)
+		{
+			EndMatch();
+			BroadcastSnapshotToClientsForSystemEvent();
+		}
+	}
+
+	float GetDominanceOccupiedRatio()
+	{
+		Board board = Board.Current;
+		if(board == null || board.State == null)
+			return 0f;
+
+		Color[] playerColors = new Color[Mathf.Min(PlayerCount, BoardUtility.MaxPlayers)];
+		for(int i = 0; i < playerColors.Length; ++i)
+			playerColors[i] = PlayerInfos[i].color;
+
+		BoardUtility.RenderAnalysis(board.Caches, board.State, playerColors);
+		float[] areaByPlayer = BoardUtility.GetPlayerAreasByDominance(board, PlayerCount);
+		if(areaByPlayer == null || areaByPlayer.Length == 0)
+			return 0f;
+
+		float occupied = 0f;
+		for(int i = 0; i < areaByPlayer.Length; ++i)
+			occupied += Mathf.Max(0f, areaByPlayer[i]);
+
+		float total = Mathf.Pow(board.State.Size, 2f);
+		if(total <= 0f)
+			return 0f;
+
+		return Mathf.Clamp01(occupied / total);
+	}
+
 	public override bool UseContinuousPlacement => true;
+	public override bool SupportsPassAction => false;
+	public override bool SupportsRequestScoringAction => true;
+	public override bool SupportsResignAction => true;
 
 	public override float ContinuousPlacementFrequencyPerSecond
 	{
