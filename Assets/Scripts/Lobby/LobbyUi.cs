@@ -29,7 +29,6 @@ public class LobbyUi : MonoBehaviour
 
 		// Lobby settings
 		SetVisibilityOptions(allVisibilityOptions);
-		visibilityDropdown.interactable = Lobby.Current.IsHost;
 		visibilityDropdown.onValueChanged.AddListener(OnVisibilityDropdownValueChanged);
 		Lobby.Current.OnVisibilityChanged += OnVisibilityChanged;
 		RefreshLobbySettingsUi();
@@ -44,7 +43,6 @@ public class LobbyUi : MonoBehaviour
 		boardSizeSlider.onValueChanged.AddListener(OnBoardSizeSliderValueChanged);
 		stoneHardnessSlider.onValueChanged.AddListener(OnStoneHardnessSliderValueChanged);
 		SetBoardShapeOptions(allBoardShapeOptions);
-		boardShapeDropdown.interactable = Lobby.Current.IsHost;
 		boardShapeDropdown.onValueChanged.AddListener(OnBoardShapeDropdownValueChanged);
 		shrinkingToggle.onValueChanged.AddListener(OnShrinkingToggleValueChanged);
 		shrinkSpeedSlider.onValueChanged.AddListener(OnShrinkSpeedSliderValueChanged);
@@ -54,6 +52,7 @@ public class LobbyUi : MonoBehaviour
 		// Footer
 		startButton.gameObject.SetActive(Lobby.Current.IsHost);
 		startButton.interactable = Lobby.Current.IsHost;
+		RefreshHostEditableState();
 		RefreshFooterArea();
 	}
 
@@ -142,6 +141,10 @@ public class LobbyUi : MonoBehaviour
 
 	void RefreshLobbySettingsUi()
 	{
+		int visibilityIndex = visibilityOptions.IndexOf(Lobby.Current.Visibility);
+		if(visibilityIndex >= 0)
+			visibilityDropdown.SetValueWithoutNotify(visibilityIndex);
+
 		invitationCodeRow.SetActive(Lobby.Current.Visibility == LobbyVisibility.Private);
 		invitationCodeText.text = Lobby.Current?.GetInvitationCode();
 	}
@@ -159,6 +162,7 @@ public class LobbyUi : MonoBehaviour
 	void OnPlayersChanged()
 	{
 		ReconstructPlayerSlots();
+		RefreshHostEditableState();
 		RefreshFooterArea();
 	}
 
@@ -281,23 +285,41 @@ public class LobbyUi : MonoBehaviour
 	void OnMatchRuleChanged()
 	{
 		RefreshMatchRuleArea();
+		RefreshHostEditableState();
 		RefreshFooterArea();
 	}
 
 	void RefreshMatchRuleArea()
 	{
 		var rule = Lobby.Current.MatchRule;
+		int modeIndex = matchModeOptions.FindIndex(m => m.ModeId == rule.modeId);
+		if(modeIndex >= 0)
+			matchModeDropdown.SetValueWithoutNotify(modeIndex);
+
 		boardSizeText.text = rule.boardSize.ToString();
-		boardSizeSlider.value = rule.boardSize;
+		boardSizeSlider.SetValueWithoutNotify(rule.boardSize);
 		stoneHardnessText.text = rule.stoneHardness.ToString("F2");
-		stoneHardnessSlider.value = rule.stoneHardness;
+		stoneHardnessSlider.SetValueWithoutNotify(rule.stoneHardness);
 		int shapeIndex = boardShapeOptions.IndexOf(rule.boardShape);
 		if(shapeIndex >= 0)
-			boardShapeDropdown.value = shapeIndex;
-		shrinkingToggle.isOn = rule.useShrinking;
+			boardShapeDropdown.SetValueWithoutNotify(shapeIndex);
+		shrinkingToggle.SetIsOnWithoutNotify(rule.useShrinking);
 		shrinkSpeedRow.gameObject.SetActive(rule.useShrinking);
 		shrinkSpeedText.text = rule.shrinkSpeed.ToString("F2");
-		shrinkSpeedSlider.value = rule.shrinkSpeed;
+		shrinkSpeedSlider.SetValueWithoutNotify(rule.shrinkSpeed);
+	}
+
+	void RefreshHostEditableState()
+	{
+		bool isHost = Lobby.Current != null && Lobby.Current.IsHost;
+		visibilityDropdown.interactable = isHost;
+		matchModeDropdown.interactable = isHost;
+		boardSizeSlider.interactable = isHost;
+		stoneHardnessSlider.interactable = isHost;
+		boardShapeDropdown.interactable = isHost;
+		shrinkingToggle.interactable = isHost;
+		shrinkSpeedSlider.interactable = isHost;
+		addPlayerButton.interactable = isHost && Lobby.Current != null && Lobby.Current.Players.Count < 4;
 	}
 	#endregion
 
