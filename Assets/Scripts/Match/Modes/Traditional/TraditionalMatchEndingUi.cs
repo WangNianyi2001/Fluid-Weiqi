@@ -33,26 +33,34 @@ public class TraditionalMatchEndingUi : MonoBehaviour
 
 	void OnMatchEnded()
 	{
+		Match match = Match.Current;
+		if(match == null)
+			return;
+
 		if(panelRoot != null)
 			panelRoot.SetActive(true);
 
-		float[] results = BoardUtility.GetPlayerAreasByDominance(Board.Current, Match.Current.PlayerCount);
+		MatchResultSummary summary = match.LastResultSummary ?? match.CalculateResultSummary();
+		if(summary == null)
+			return;
+
 		List<string> lines = new();
 
-		lines.Add(string.Join("\n", results.Select(
-			(float area, int i) => $"{Match.Current.PlayerInfos[i].name}：{area.ToString("F2")} 目"
+		lines.Add(string.Join("\n", summary.playerResults.Select(
+			player => $"{player.playerName}：{player.area.ToString("F2")} 目{(player.isResigned ? "（已认输）" : string.Empty)}"
 		)));
 
-		float maxArea = results.Max();
-		var winners = results
-			.Select((float area, int i) => (area, i))
-			.Where(pair => pair.area >= maxArea)
-			.Select(pair => pair.i)
-			.ToArray();
-		if(winners.Length == results.Length)
+		if(!summary.hasWinner)
+		{
+			lines.Add("无人获胜");
+			resultText.text = string.Join("\n", lines);
+			return;
+		}
+
+		if(summary.isDraw)
 			lines.Add("平局");
 		else
-			lines.Add($"{string.Join("、", winners.Select(i => Match.Current.PlayerInfos[i].name))}胜");
+			lines.Add($"{string.Join("、", summary.winnerPlayerIndexes.Select(i => match.PlayerInfos[i].name))}胜");
 
 		resultText.text = string.Join("\n", lines);
 	}

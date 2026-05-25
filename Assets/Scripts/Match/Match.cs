@@ -25,6 +25,22 @@ public struct PlayerInfo
 	public Color color;
 }
 
+public sealed class MatchPlayerResult
+{
+	public int playerIndex;
+	public string playerName;
+	public float area;
+	public bool isResigned;
+}
+
+public sealed class MatchResultSummary
+{
+	public List<MatchPlayerResult> playerResults = new();
+	public List<int> winnerPlayerIndexes = new();
+	public bool isDraw;
+	public bool hasWinner => winnerPlayerIndexes != null && winnerPlayerIndexes.Count > 0;
+}
+
 public abstract class Match : MonoBehaviour
 {
 	public static Match Current { get; private set; }
@@ -59,7 +75,9 @@ public abstract class Match : MonoBehaviour
 	readonly List<PendingLocalAction> pendingLocalActions = new();
 	BoardStateSnapshot lastResolvedBoardSnapshot;
 	MatchFlowSnapshot lastResolvedFlowSnapshot;
+	MatchResultSummary lastResultSummary;
 	IMatchTransport matchTransport;
+	public MatchResultSummary LastResultSummary => lastResultSummary;
 
 	const int MaxPendingLocalActions = 64;
 
@@ -81,6 +99,7 @@ public abstract class Match : MonoBehaviour
 
 	protected void Start()
 	{
+		lastResultSummary = null;
 		InitializePlayers();
 		CurrentPlayerIndex = 0;
 		BeginMoveWindow();
@@ -122,9 +141,71 @@ public abstract class Match : MonoBehaviour
 		if(isEnded)
 			return;
 
+		FinalizeMatchEnd();
+	}
+
+	void FinalizeMatchEnd()
+	{
+		if(isEnded)
+			return;
+
 		isEnded = true;
+		lastResultSummary = CalculateResultSummary();
 		CancelAllPlayers();
 		onEnd?.Invoke();
+	}
+
+	public MatchResultSummary CalculateResultSummary()
+	{
+		MatchResultSummary summary = new MatchResultSummary();
+
+		float[] areaByPlayer = null;
+		if(Board.Current != null && Board.Current.State != null)
+			areaByPlayer = BoardUtility.GetPlayerAreasByDominance(Board.Current, PlayerCount);
+
+		for(int i = 0; i < PlayerCount; ++i)
+		{
+			summary.playerResults.Add(new MatchPlayerResult
+			{
+				playerIndex = i,
+				playerName = PlayerInfos != null && i < PlayerInfos.Count ? PlayerInfos[i].name : $"Player{i + 1}",
+				area = areaByPlayer != null && i < areaByPlayer.Length ? areaByPlayer[i] : 0f,
+				isResigned = IsPlayerResigned(i),
+			});
+		}
+
+		List<MatchPlayerResult> activePlayers = new List<MatchPlayerResult>();
+		for(int i = 0; i < summary.playerResults.Count; ++i)
+		{
+			if(!summary.playerResults[i].isResigned)
+				activePlayers.Add(summary.playerResults[i]);
+		}
+
+		if(activePlayers.Count == 0)
+		{
+			summary.isDraw = false;
+			return summary;
+		}
+
+		if(activePlayers.Count == 1)
+		{
+			summary.winnerPlayerIndexes.Add(activePlayers[0].playerIndex);
+			summary.isDraw = false;
+			return summary;
+		}
+
+		float maxArea = float.MinValue;
+		for(int i = 0; i < activePlayers.Count; ++i)
+			maxArea = Mathf.Max(maxArea, activePlayers[i].area);
+
+		for(int i = 0; i < activePlayers.Count; ++i)
+		{
+			if(activePlayers[i].area >= maxArea)
+				summary.winnerPlayerIndexes.Add(activePlayers[i].playerIndex);
+		}
+
+		summary.isDraw = activePlayers.Count > 1 && summary.winnerPlayerIndexes.Count == activePlayers.Count;
+		return summary;
 	}
 
 	protected void BroadcastSnapshotToClientsForSystemEvent()
@@ -297,6 +378,7 @@ public abstract class Match : MonoBehaviour
 		// SetState already refreshes board visuals with the latest state.
 		board.SetState(nextState);
 		board.ClearPreview(false);
+		ClearAllScoringRequestStates();
 		RecordAcceptedAction(MatchActionType.Place, ActivePlayerIndex, position, activePlacementStrength);
 		OnPlacementAccepted(ActivePlayerIndex, position, activePlacementStrength);
 		onStateChanged?.Invoke();
@@ -346,7 +428,43 @@ public abstract class Match : MonoBehaviour
 		}
 
 		if(alivePlayers <= 1)
+		{
 			EndMatch();
+			return;
+		}
+
+		if(UseContinuousPlacement || isEnded)
+			return;
+
+		if(CurrentPlayerIndex == ActivePlayerIndex || !CanPlayerMove(CurrentPlayerIndex))
+		{
+			int nextPlayer = FindNextNonResignedPlayerIndex(CurrentPlayerIndex);
+			if(nextPlayer >= 0)
+				CurrentPlayerIndex = nextPlayer;
+		}
+
+		BeginMoveWindow();
+	}
+
+	void ClearAllScoringRequestStates()
+	{
+		for(int i = 0; i < PlayerCount; ++i)
+			SetPlayerScoringRequestState(i, false);
+	}
+
+	int FindNextNonResignedPlayerIndex(int startIndex)
+	{
+		if(PlayerCount <= 0)
+			return -1;
+
+		for(int i = 0; i < PlayerCount; ++i)
+		{
+			int idx = ((startIndex + i) % PlayerCount + PlayerCount) % PlayerCount;
+			if(!IsPlayerResigned(idx))
+				return idx;
+		}
+
+		return -1;
 	}
 
 	void RecordAcceptedAction(MatchActionType actionType, int playerIndex, Vector2 position, float strength)
@@ -1265,9 +1383,7 @@ public abstract class Match : MonoBehaviour
 
 		if(flowSnapshot.isEnded && !isEnded)
 		{
-			isEnded = true;
-			CancelAllPlayers();
-			onEnd?.Invoke();
+			FinalizeMatchEnd();
 		}
 		else if(!flowSnapshot.isEnded && !isEnded && !UseContinuousPlacement)
 		{

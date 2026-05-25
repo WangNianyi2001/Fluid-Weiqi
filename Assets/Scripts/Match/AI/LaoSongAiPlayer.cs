@@ -16,6 +16,8 @@ public class LaoSongAiPlayer : AiPlayer
 	{
 		base.Initialize(match, playerIndex, rule, config);
 		laoSongConfig = config;
+		if(Match != null)
+			Match.OnPlayerScoringRequestStateChanged += OnPlayerScoringRequestStateChanged;
 	}
 
 	public override void SetMoveRight(bool canMove)
@@ -56,12 +58,6 @@ public class LaoSongAiPlayer : AiPlayer
 
 		while(!cancelled && !Match.IsEnded && isActive)
 		{
-			if(TryAutoFollowScoringRequest())
-			{
-				yield return new WaitForSeconds(GetContinuousStepDuration());
-				continue;
-			}
-
 			BoardState state = Board.Current != null ? new BoardState(Board.Current.State) : null;
 			if(state == null)
 				yield break;
@@ -78,12 +74,19 @@ public class LaoSongAiPlayer : AiPlayer
 		}
 	}
 
-	bool TryAutoFollowScoringRequest()
+	void OnPlayerScoringRequestStateChanged()
 	{
+		TryRespondToScoringRequest();
+	}
+
+	void TryRespondToScoringRequest()
+	{
+		if(Match == null || Match.IsEnded)
+			return;
 		if(!Match.SupportsRequestScoringAction)
-			return false;
+			return;
 		if(Match.IsPlayerResigned(PlayerIndex) || Match.IsPlayerScoringRequested(PlayerIndex))
-			return false;
+			return;
 
 		bool hasPeerRequest = false;
 		for(int i = 0; i < Match.PlayerCount; ++i)
@@ -98,18 +101,18 @@ public class LaoSongAiPlayer : AiPlayer
 		}
 
 		if(!hasPeerRequest)
-			return false;
+			return;
 
-		if(IsContinuousMode && GetDominanceOccupiedRatio() < 0.5f)
-			return false;
+		if(!ShouldApproveScoringRequest())
+			return;
 
-		return Match.TrySubmitSystemAction(PlayerIndex, MatchActionType.RequestScoring);
+		Match.TrySubmitSystemAction(PlayerIndex, MatchActionType.RequestScoring);
 	}
 
-	float GetDominanceOccupiedRatio()
+	bool ShouldApproveScoringRequest()
 	{
 		if(Board.Current == null || Board.Current.State == null)
-			return 0f;
+			return false;
 
 		Color[] playerColors = new Color[Mathf.Min(Match.PlayerCount, BoardUtility.MaxPlayers)];
 		for(int i = 0; i < playerColors.Length; ++i)
@@ -117,7 +120,34 @@ public class LaoSongAiPlayer : AiPlayer
 
 		BoardUtility.RenderAnalysis(Board.Current.Caches, Board.Current.State, playerColors);
 		float[] areaByPlayer = BoardUtility.GetPlayerAreasByDominance(Board.Current, Match.PlayerCount);
-		if(areaByPlayer == null || areaByPlayer.Length == 0)
+		if(areaByPlayer == null || areaByPlayer.Length == 0 || PlayerIndex < 0 || PlayerIndex >= areaByPlayer.Length)
+			return false;
+
+		float occupiedRatio = GetDominanceOccupiedRatio(areaByPlayer);
+		if(occupiedRatio < 0.5f)
+			return false;
+
+		float myArea = Mathf.Max(0f, areaByPlayer[PlayerIndex]);
+		bool greaterThanAll = true;
+		bool hasPlayerFarAhead = false;
+		for(int i = 0; i < areaByPlayer.Length; ++i)
+		{
+			if(i == PlayerIndex)
+				continue;
+
+			float otherArea = Mathf.Max(0f, areaByPlayer[i]);
+			if(!(myArea > otherArea))
+				greaterThanAll = false;
+			if(otherArea > myArea * 1.5f)
+				hasPlayerFarAhead = true;
+		}
+
+		return greaterThanAll || hasPlayerFarAhead;
+	}
+
+	float GetDominanceOccupiedRatio(float[] areaByPlayer)
+	{
+		if(Board.Current == null || Board.Current.State == null || areaByPlayer == null)
 			return 0f;
 
 		float occupied = 0f;
@@ -247,5 +277,11 @@ public class LaoSongAiPlayer : AiPlayer
 		lastPlacement = Vector2.zero;
 		lastPlacementTime = -1f;
 		penLiftCooldownUntil = -1f;
+	}
+
+	void OnDestroy()
+	{
+		if(Match != null)
+			Match.OnPlayerScoringRequestStateChanged -= OnPlayerScoringRequestStateChanged;
 	}
 }
