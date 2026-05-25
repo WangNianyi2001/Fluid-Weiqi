@@ -56,6 +56,12 @@ public class LaoSongAiPlayer : AiPlayer
 
 		while(!cancelled && !Match.IsEnded && isActive)
 		{
+			if(TryAutoFollowScoringRequest())
+			{
+				yield return new WaitForSeconds(GetContinuousStepDuration());
+				continue;
+			}
+
 			BoardState state = Board.Current != null ? new BoardState(Board.Current.State) : null;
 			if(state == null)
 				yield break;
@@ -70,6 +76,59 @@ public class LaoSongAiPlayer : AiPlayer
 
 			yield return new WaitForSeconds(GetContinuousStepDuration());
 		}
+	}
+
+	bool TryAutoFollowScoringRequest()
+	{
+		if(!Match.SupportsRequestScoringAction)
+			return false;
+		if(Match.IsPlayerResigned(PlayerIndex) || Match.IsPlayerScoringRequested(PlayerIndex))
+			return false;
+
+		bool hasPeerRequest = false;
+		for(int i = 0; i < Match.PlayerCount; ++i)
+		{
+			if(i == PlayerIndex || Match.IsPlayerResigned(i))
+				continue;
+			if(Match.IsPlayerScoringRequested(i))
+			{
+				hasPeerRequest = true;
+				break;
+			}
+		}
+
+		if(!hasPeerRequest)
+			return false;
+
+		if(IsContinuousMode && GetDominanceOccupiedRatio() < 0.5f)
+			return false;
+
+		return Match.TrySubmitSystemAction(PlayerIndex, MatchActionType.RequestScoring);
+	}
+
+	float GetDominanceOccupiedRatio()
+	{
+		if(Board.Current == null || Board.Current.State == null)
+			return 0f;
+
+		Color[] playerColors = new Color[Mathf.Min(Match.PlayerCount, BoardUtility.MaxPlayers)];
+		for(int i = 0; i < playerColors.Length; ++i)
+			playerColors[i] = Match.PlayerInfos[i].color;
+
+		BoardUtility.RenderAnalysis(Board.Current.Caches, Board.Current.State, playerColors);
+		float[] areaByPlayer = BoardUtility.GetPlayerAreasByDominance(Board.Current, Match.PlayerCount);
+		if(areaByPlayer == null || areaByPlayer.Length == 0)
+			return 0f;
+
+		float occupied = 0f;
+		for(int i = 0; i < areaByPlayer.Length; ++i)
+			occupied += Mathf.Max(0f, areaByPlayer[i]);
+
+		float total = Mathf.Pow(Board.Current.State.Size, 2f);
+		if(total <= 0f)
+			return 0f;
+
+		return Mathf.Clamp01(occupied / total);
 	}
 
 	void ExecuteTurnBasedMove(BoardState state)

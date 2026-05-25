@@ -29,11 +29,23 @@ public class TraditionalMatch : Match
 
 		SetPlayerPassState(CurrentPlayerIndex, true);
 		++passCount;
-		if(passCount == PlayerCount)
+		if(passCount >= GetActivePlayerCount())
 		{
 			EndMatch();
 			return;
 		}
+	}
+
+	int GetActivePlayerCount()
+	{
+		int count = 0;
+		for(int i = 0; i < PlayerCount; ++i)
+		{
+			if(!IsPlayerResigned(i))
+				count += 1;
+		}
+
+		return Mathf.Max(1, count);
 	}
 	#endregion
 }

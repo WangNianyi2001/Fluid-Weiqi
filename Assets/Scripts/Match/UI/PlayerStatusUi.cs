@@ -10,6 +10,8 @@ public class PlayerStatusUi : MonoBehaviour
 	{
 		Match.OnStateChanged += RefreshAreas;
 		Match.OnPlayerPassStateChanged += OnPassStateChanged;
+		Match.OnPlayerScoringRequestStateChanged += OnScoringRequestStateChanged;
+		Match.OnPlayerResignedStateChanged += OnResignedStateChanged;
 		Match.OnPlayerMoveRightChanged += OnPlayerMoveRightChanged;
 	}
 
@@ -18,6 +20,8 @@ public class PlayerStatusUi : MonoBehaviour
 		RebuildRows();
 		RefreshAreas();
 		RefreshPassStates();
+		RefreshScoringRequestStates();
+		RefreshResignedStates();
 		RefreshActivePlayers();
 	}
 
@@ -27,6 +31,8 @@ public class PlayerStatusUi : MonoBehaviour
 		{
 			Match.OnStateChanged -= RefreshAreas;
 			Match.OnPlayerPassStateChanged -= OnPassStateChanged;
+			Match.OnPlayerScoringRequestStateChanged -= OnScoringRequestStateChanged;
+			Match.OnPlayerResignedStateChanged -= OnResignedStateChanged;
 			Match.OnPlayerMoveRightChanged -= OnPlayerMoveRightChanged;
 		}
 	}
@@ -47,6 +53,8 @@ public class PlayerStatusUi : MonoBehaviour
 			row.Name = Match.PlayerInfos[i].name;
 			row.Color = Match.PlayerInfos[i].color;
 			row.IsPassed = false;
+			row.IsScoringRequested = false;
+			row.IsResigned = false;
 			rows.Add(row);
 		}
 	}
@@ -112,6 +120,36 @@ public class PlayerStatusUi : MonoBehaviour
 	void OnPassStateChanged()
 	{
 		RefreshPassStates();
+	}
+
+	void RefreshScoringRequestStates()
+	{
+		var requestStates = Match.PlayerScoringRequestStates;
+		for(int i = 0; i < rows.Count; ++i)
+		{
+			bool requested = requestStates != null && requestStates.TryGetValue(i, out bool value) && value;
+			rows[i].IsScoringRequested = requested;
+		}
+	}
+
+	void OnScoringRequestStateChanged()
+	{
+		RefreshScoringRequestStates();
+	}
+
+	void RefreshResignedStates()
+	{
+		var resignedStates = Match.PlayerResignedStates;
+		for(int i = 0; i < rows.Count; ++i)
+		{
+			bool resigned = resignedStates != null && resignedStates.TryGetValue(i, out bool value) && value;
+			rows[i].IsResigned = resigned;
+		}
+	}
+
+	void OnResignedStateChanged()
+	{
+		RefreshResignedStates();
 	}
 	#endregion
 }

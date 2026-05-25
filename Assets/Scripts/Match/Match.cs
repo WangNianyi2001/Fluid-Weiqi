@@ -38,6 +38,8 @@ public abstract class Match : MonoBehaviour
 	int activePlayerIndex = -1;
 	float activePlacementStrength = 1f;
 	readonly Dictionary<int, bool> playerPassStates = new();
+	readonly Dictionary<int, bool> playerScoringRequestStates = new();
+	readonly Dictionary<int, bool> playerResignedStates = new();
 	readonly Dictionary<int, bool> playerMoveRights = new();
 	int turnSeq;
 	int nextActionSeq = 1;
@@ -218,6 +220,26 @@ public abstract class Match : MonoBehaviour
 		ExecuteAsPlayer(playerIndex, 1f, OnPass);
 	}
 
+	public void ReceiveRequestScoring()
+	{
+		ReceiveRequestScoring(CurrentPlayerIndex);
+	}
+
+	public void ReceiveRequestScoring(int playerIndex)
+	{
+		ExecuteAsPlayer(playerIndex, 1f, OnRequestScoring);
+	}
+
+	public void ReceiveResign()
+	{
+		ReceiveResign(CurrentPlayerIndex);
+	}
+
+	public void ReceiveResign(int playerIndex)
+	{
+		ExecuteAsPlayer(playerIndex, 1f, OnResign);
+	}
+
 	protected virtual void OnCursorEnter(Vector2 position)
 	{
 		TryPreviewStone(position);
@@ -292,6 +314,39 @@ public abstract class Match : MonoBehaviour
 	protected virtual void OnPass()
 	{
 		RecordAcceptedAction(MatchActionType.Pass, ActivePlayerIndex, Vector2.zero, 1f);
+	}
+
+	protected virtual void OnRequestScoring()
+	{
+		RecordAcceptedAction(MatchActionType.RequestScoring, ActivePlayerIndex, Vector2.zero, 1f);
+		SetPlayerScoringRequestState(ActivePlayerIndex, true);
+
+		for(int i = 0; i < PlayerCount; ++i)
+		{
+			if(IsPlayerResigned(i))
+				continue;
+			if(!IsPlayerScoringRequested(i))
+				return;
+		}
+
+		EndMatch();
+	}
+
+	protected virtual void OnResign()
+	{
+		RecordAcceptedAction(MatchActionType.Resign, ActivePlayerIndex, Vector2.zero, 1f);
+		SetPlayerResignedState(ActivePlayerIndex, true);
+		SetPlayerMoveRight(ActivePlayerIndex, false);
+
+		int alivePlayers = 0;
+		for(int i = 0; i < PlayerCount; ++i)
+		{
+			if(!IsPlayerResigned(i))
+				alivePlayers += 1;
+		}
+
+		if(alivePlayers <= 1)
+			EndMatch();
 	}
 
 	void RecordAcceptedAction(MatchActionType actionType, int playerIndex, Vector2 position, float strength)
@@ -413,10 +468,53 @@ public abstract class Match : MonoBehaviour
 
 	public virtual void OnRequestScoringButtonClicked()
 	{
+		if(!TryResolveLocalActionPlayerIndex(out int playerIndex))
+			return;
+
+		TrySubmitSystemAction(playerIndex, MatchActionType.RequestScoring);
 	}
 
 	public virtual void OnResignButtonClicked()
 	{
+		if(!TryResolveLocalActionPlayerIndex(out int playerIndex))
+			return;
+
+		TrySubmitSystemAction(playerIndex, MatchActionType.Resign);
+	}
+
+	public bool TrySubmitSystemAction(int playerIndex, MatchActionType actionType)
+	{
+		if(IsEnded)
+			return false;
+		if(playerIndex < 0 || playerIndex >= PlayerCount)
+			return false;
+		if(actionType == MatchActionType.RequestScoring && !SupportsRequestScoringAction)
+			return false;
+		if(actionType == MatchActionType.Resign && !SupportsResignAction)
+			return false;
+		if(IsPlayerResigned(playerIndex))
+			return false;
+		if(actionType == MatchActionType.RequestScoring && IsPlayerScoringRequested(playerIndex))
+			return false;
+
+		if(TryApplyPredictedActionAndSendRequest(playerIndex, actionType, Vector2.zero))
+			return true;
+
+		switch(actionType)
+		{
+			case MatchActionType.RequestScoring:
+				ReceiveRequestScoring(playerIndex);
+				break;
+			case MatchActionType.Resign:
+				ReceiveResign(playerIndex);
+				break;
+			default:
+				return false;
+		}
+
+		if(ShouldBroadcastAuthorityResult())
+			BroadcastAcceptedAuthorityMessages(playerIndex);
+		return true;
 	}
 
 	protected Action<int> onCurrentPlayerChanged;
@@ -440,8 +538,24 @@ public abstract class Match : MonoBehaviour
 		remove => onPlayerMoveRightChanged -= value;
 	}
 
+	protected Action onPlayerScoringRequestStateChanged;
+	public event Action OnPlayerScoringRequestStateChanged
+	{
+		add => onPlayerScoringRequestStateChanged += value;
+		remove => onPlayerScoringRequestStateChanged -= value;
+	}
+
+	protected Action onPlayerResignedStateChanged;
+	public event Action OnPlayerResignedStateChanged
+	{
+		add => onPlayerResignedStateChanged += value;
+		remove => onPlayerResignedStateChanged -= value;
+	}
+
 	public IReadOnlyDictionary<int, bool> PlayerMoveRights => playerMoveRights;
 	public IReadOnlyDictionary<int, bool> PlayerPassStates => playerPassStates;
+	public IReadOnlyDictionary<int, bool> PlayerScoringRequestStates => playerScoringRequestStates;
+	public IReadOnlyDictionary<int, bool> PlayerResignedStates => playerResignedStates;
 
 	protected void SetPlayerPassState(int playerIndex, bool passed)
 	{
@@ -453,6 +567,70 @@ public abstract class Match : MonoBehaviour
 		playerPassStates[playerIndex] = passed;
 		if(changed)
 			onPlayerPassStateChanged?.Invoke();
+	}
+
+	protected void SetPlayerScoringRequestState(int playerIndex, bool requested)
+	{
+		if(playerIndex < 0 || playerIndex >= PlayerCount)
+			return;
+
+		bool previous = playerScoringRequestStates.TryGetValue(playerIndex, out bool existing) && existing;
+		bool changed = previous != requested;
+		playerScoringRequestStates[playerIndex] = requested;
+		if(changed)
+			onPlayerScoringRequestStateChanged?.Invoke();
+	}
+
+	protected void SetPlayerResignedState(int playerIndex, bool resigned)
+	{
+		if(playerIndex < 0 || playerIndex >= PlayerCount)
+			return;
+
+		bool previous = playerResignedStates.TryGetValue(playerIndex, out bool existing) && existing;
+		bool changed = previous != resigned;
+		playerResignedStates[playerIndex] = resigned;
+		if(changed)
+			onPlayerResignedStateChanged?.Invoke();
+	}
+
+	public bool IsPlayerScoringRequested(int playerIndex)
+	{
+		if(playerIndex < 0 || playerIndex >= PlayerCount)
+			return false;
+		return playerScoringRequestStates.TryGetValue(playerIndex, out bool requested) && requested;
+	}
+
+	public bool IsPlayerResigned(int playerIndex)
+	{
+		if(playerIndex < 0 || playerIndex >= PlayerCount)
+			return false;
+		return playerResignedStates.TryGetValue(playerIndex, out bool resigned) && resigned;
+	}
+
+	bool TryResolveLocalActionPlayerIndex(out int playerIndex)
+	{
+		for(int i = 0; i < PlayerCount; ++i)
+		{
+			if(!IsPlayerLocallyControllable(i))
+				continue;
+			if(CanPlayerMove(i))
+			{
+				playerIndex = i;
+				return true;
+			}
+		}
+
+		for(int i = 0; i < PlayerCount; ++i)
+		{
+			if(IsPlayerLocallyControllable(i))
+			{
+				playerIndex = i;
+				return true;
+			}
+		}
+
+		playerIndex = -1;
+		return false;
 	}
 
 	protected void StepPlayerIndex()
@@ -491,11 +669,15 @@ public abstract class Match : MonoBehaviour
 	{
 		players.Clear();
 		playerPassStates.Clear();
+		playerScoringRequestStates.Clear();
+		playerResignedStates.Clear();
 		playerMoveRights.Clear();
 
 		for(int i = 0; i < PlayerCount; ++i)
 		{
 			playerPassStates[i] = false;
+			playerScoringRequestStates[i] = false;
+			playerResignedStates[i] = false;
 			playerMoveRights[i] = false;
 			MatchPlayer player = CreateRuntimePlayer(i);
 			if(player == null)
@@ -699,6 +881,8 @@ public abstract class Match : MonoBehaviour
 			turnSeq = turnSeq,
 			isEnded = isEnded,
 			passStates = BuildPassStateArray(),
+			scoringRequestStates = BuildScoringRequestStateArray(),
+			resignedStates = BuildResignedStateArray(),
 		};
 	}
 
@@ -737,6 +921,8 @@ public abstract class Match : MonoBehaviour
 				{
 					MatchActionType.Place => MatchDeltaOpType.Place,
 					MatchActionType.Remove => MatchDeltaOpType.Remove,
+					MatchActionType.RequestScoring => MatchDeltaOpType.RequestScoring,
+					MatchActionType.Resign => MatchDeltaOpType.Resign,
 					_ => MatchDeltaOpType.Pass,
 				},
 				playerIndex = playerIndex,
@@ -752,6 +938,8 @@ public abstract class Match : MonoBehaviour
 				{
 					MatchActionType.Place => MatchDeltaOpType.Place,
 					MatchActionType.Remove => MatchDeltaOpType.Remove,
+					MatchActionType.RequestScoring => MatchDeltaOpType.RequestScoring,
+					MatchActionType.Resign => MatchDeltaOpType.Resign,
 					_ => MatchDeltaOpType.Pass,
 				},
 				playerIndex = playerIndex,
@@ -816,6 +1004,28 @@ public abstract class Match : MonoBehaviour
 		return states;
 	}
 
+	bool[] BuildScoringRequestStateArray()
+	{
+		if(PlayerCount <= 0)
+			return Array.Empty<bool>();
+
+		bool[] states = new bool[PlayerCount];
+		for(int i = 0; i < states.Length; ++i)
+			states[i] = playerScoringRequestStates.TryGetValue(i, out bool requested) && requested;
+		return states;
+	}
+
+	bool[] BuildResignedStateArray()
+	{
+		if(PlayerCount <= 0)
+			return Array.Empty<bool>();
+
+		bool[] states = new bool[PlayerCount];
+		for(int i = 0; i < states.Length; ++i)
+			states[i] = playerResignedStates.TryGetValue(i, out bool resigned) && resigned;
+		return states;
+	}
+
 	void InitializeNetworkTransport()
 	{
 		if(Lobby.Current == null || !Lobby.Current.IsOnline)
@@ -871,7 +1081,7 @@ public abstract class Match : MonoBehaviour
 			return;
 		}
 
-		if(!CanPlayerMakeMoveNow(playerIndex))
+		if(IsMoveWindowBoundAction(request.actionType) && !CanPlayerMakeMoveNow(playerIndex))
 		{
 			MatchActionResult reject = CreateSnapshotResult(MatchResultKind.ActionReject, false, "not-current-player", playerIndex, request.actionSeq);
 			reject.targetPlayerLocator = request.playerLocator;
@@ -879,7 +1089,7 @@ public abstract class Match : MonoBehaviour
 			return;
 		}
 
-		if(request.turnSeq != turnSeq)
+		if(IsMoveWindowBoundAction(request.actionType) && request.turnSeq != turnSeq)
 		{
 			MatchActionResult reject = CreateSnapshotResult(MatchResultKind.ActionReject, false, "turn-seq-mismatch", playerIndex, request.actionSeq);
 			reject.targetPlayerLocator = request.playerLocator;
@@ -911,12 +1121,24 @@ public abstract class Match : MonoBehaviour
 			return;
 		}
 
-		if(request.actionType == MatchActionType.Remove)
+		if(IsSystemOnlyAction(request.actionType))
 		{
 			BroadcastAcceptedAuthorityMessages(playerIndex);
 			ClearPendingAuthorityContext();
 			hasLastAcceptedAction = false;
 		}
+	}
+
+	bool IsMoveWindowBoundAction(MatchActionType actionType)
+	{
+		return actionType == MatchActionType.Place || actionType == MatchActionType.Pass;
+	}
+
+	bool IsSystemOnlyAction(MatchActionType actionType)
+	{
+		return actionType == MatchActionType.Remove
+			|| actionType == MatchActionType.RequestScoring
+			|| actionType == MatchActionType.Resign;
 	}
 
 	void OnNetworkActionResult(MatchActionResult result)
@@ -986,6 +1208,12 @@ public abstract class Match : MonoBehaviour
 				case MatchDeltaOpType.Pass:
 					ReceivePass(op.playerIndex);
 					break;
+				case MatchDeltaOpType.RequestScoring:
+					ReceiveRequestScoring(op.playerIndex);
+					break;
+				case MatchDeltaOpType.Resign:
+					ReceiveResign(op.playerIndex);
+					break;
 			}
 		}
 
@@ -1019,6 +1247,20 @@ public abstract class Match : MonoBehaviour
 		{
 			for(int i = 0; i < PlayerCount; ++i)
 				SetPlayerPassState(i, i < passStates.Length && passStates[i]);
+		}
+
+		bool[] scoringRequestStates = flowSnapshot.scoringRequestStates;
+		if(scoringRequestStates != null)
+		{
+			for(int i = 0; i < PlayerCount; ++i)
+				SetPlayerScoringRequestState(i, i < scoringRequestStates.Length && scoringRequestStates[i]);
+		}
+
+		bool[] resignedStates = flowSnapshot.resignedStates;
+		if(resignedStates != null)
+		{
+			for(int i = 0; i < PlayerCount; ++i)
+				SetPlayerResignedState(i, i < resignedStates.Length && resignedStates[i]);
 		}
 
 		if(flowSnapshot.isEnded && !isEnded)
@@ -1073,6 +1315,8 @@ public abstract class Match : MonoBehaviour
 			MatchActionType.Place => ReceivePlace(playerIndex, position, strength),
 			MatchActionType.Pass => true,
 			MatchActionType.Remove => true,
+			MatchActionType.RequestScoring => true,
+			MatchActionType.Resign => true,
 			_ => false,
 		};
 		if(!applied)
@@ -1082,6 +1326,10 @@ public abstract class Match : MonoBehaviour
 			ReceivePass(playerIndex);
 		else if(actionType == MatchActionType.Remove)
 			ReceiveRemove(playerIndex, position);
+		else if(actionType == MatchActionType.RequestScoring)
+			ReceiveRequestScoring(playerIndex);
+		else if(actionType == MatchActionType.Resign)
+			ReceiveResign(playerIndex);
 
 		int actionSeq = nextActionSeq++;
 		MatchActionRequest request = new MatchActionRequest

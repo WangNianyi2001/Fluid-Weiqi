@@ -139,6 +139,16 @@ public class OnlinePlayer : MatchPlayer
 				succeed = true;
 				shouldNotify = false;
 				break;
+				case MatchActionType.RequestScoring:
+					Match.ReceiveRequestScoring(PlayerIndex);
+					succeed = true;
+					shouldNotify = false;
+					break;
+				case MatchActionType.Resign:
+					Match.ReceiveResign(PlayerIndex);
+					succeed = true;
+					shouldNotify = false;
+					break;
 			default:
 				succeed = false;
 				break;

@@ -14,6 +14,8 @@ public enum MatchActionType
 	Place,
 	Pass,
 	Remove,
+	RequestScoring,
+	Resign,
 }
 
 public enum MatchRequestKind
@@ -35,6 +37,8 @@ public enum MatchDeltaOpType
 	Place,
 	Pass,
 	Remove,
+	RequestScoring,
+	Resign,
 }
 
 [System.Serializable]
@@ -85,6 +89,8 @@ public sealed class MatchFlowSnapshot
 	public int turnSeq;
 	public bool isEnded;
 	public bool[] passStates;
+	public bool[] scoringRequestStates;
+	public bool[] resignedStates;
 }
 
 [System.Serializable]
