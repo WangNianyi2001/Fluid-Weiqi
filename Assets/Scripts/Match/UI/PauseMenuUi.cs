@@ -3,6 +3,7 @@ using UnityEngine;
 public class PauseMenuUi : MonoBehaviour
 {
 	[SerializeField] GameObject pauseMenu;
+	TraditionalMatchEndingUi endingUi;
 
 	protected void Awake()
 	{
@@ -64,8 +65,41 @@ public class PauseMenuUi : MonoBehaviour
 	{
 		if(GameManager.Instance == null)
 			return;
+
 		ClosePauseMenu();
+
+		if(Lobby.Current == null || Lobby.Current.IsHost)
+		{
+			GameManager.Instance.SwitchScene(GameScene.Lobby);
+			return;
+		}
+
+		if(Match.Current != null)
+			Match.Current.InputEnabled = false;
+
+		TraditionalMatchEndingUi ui = ResolveEndingUi();
+		if(ui != null)
+		{
+			ui.ShowMessage("房主已结束对局", GameScene.Lobby);
+			return;
+		}
+
 		GameManager.Instance.SwitchScene(GameScene.Lobby);
+	}
+
+	TraditionalMatchEndingUi ResolveEndingUi()
+	{
+		if(endingUi != null)
+			return endingUi;
+
+		Canvas canvas = GetComponentInParent<Canvas>(true);
+		if(canvas != null)
+			endingUi = canvas.GetComponentInChildren<TraditionalMatchEndingUi>(true);
+
+		if(endingUi == null)
+			endingUi = FindObjectOfType<TraditionalMatchEndingUi>(true);
+
+		return endingUi;
 	}
 
 	void OnLobbyDismissed()

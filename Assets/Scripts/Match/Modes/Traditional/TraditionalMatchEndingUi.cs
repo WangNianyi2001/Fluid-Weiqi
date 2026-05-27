@@ -7,6 +7,7 @@ public class TraditionalMatchEndingUi : MonoBehaviour
 {
 	[SerializeField] Text resultText;
 	[SerializeField] GameObject panelRoot;
+	GameScene endButtonTargetScene = GameScene.StartMenu;
 
 	protected void Awake()
 	{
@@ -37,6 +38,8 @@ public class TraditionalMatchEndingUi : MonoBehaviour
 		if(match == null)
 			return;
 
+		endButtonTargetScene = GameScene.StartMenu;
+
 		if(panelRoot != null)
 			panelRoot.SetActive(true);
 
@@ -65,9 +68,21 @@ public class TraditionalMatchEndingUi : MonoBehaviour
 		resultText.text = string.Join("\n", lines);
 	}
 
+	public void ShowMessage(string message, GameScene returnScene)
+	{
+		endButtonTargetScene = returnScene;
+
+		if(panelRoot != null)
+			panelRoot.SetActive(true);
+
+		if(resultText != null)
+			resultText.text = message;
+	}
+
 	public void OnEndButtonClicked()
 	{
-		// TODO
-		GameManager.Instance.SwitchScene(GameScene.StartMenu);
+		if(GameManager.Instance == null)
+			return;
+		GameManager.Instance.SwitchScene(endButtonTargetScene);
 	}
 }
