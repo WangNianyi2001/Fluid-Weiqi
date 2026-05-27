@@ -57,11 +57,13 @@ public class HostLobby : Lobby
 
 	PlayerDescriptor MakeNewPlayer(int i)
 	{
+		bool onlineLobby = IsOnline;
+		PlayerType type = onlineLobby ? PlayerType.Online : PlayerType.Local;
 		return new()
 		{
-			type = PlayerType.Local,
+			type = type,
 			isHost = false,
-			locator = localPlayerLocator,
+			locator = onlineLobby ? MakeRemotePlayerLocator(i) : localPlayerLocator,
 			colorIndex = (i + 2) % 4,
 		};
 	}
@@ -199,10 +201,15 @@ public class HostLobby : Lobby
 	public override LobbyVisibility Visibility => visibility;
 	public void SetVisibility(LobbyVisibility value)
 	{
+		LobbyVisibility previous = visibility;
 		visibility = value;
 		if(visibility != LobbyVisibility.Private)
 			invitationCode = null;
+
+		bool playerSlotsChanged = previous != visibility && NormalizePlayerSlotsForVisibility();
 		OnVisibilityChanged?.Invoke();
+		if(playerSlotsChanged)
+			OnPlayersChanged?.Invoke();
 
 		if(visibility == LobbyVisibility.Private && string.IsNullOrEmpty(invitationCode))
 		{
@@ -220,6 +227,39 @@ public class HostLobby : Lobby
 		}
 
 		PublishLobbySnapshot();
+	}
+
+	bool NormalizePlayerSlotsForVisibility()
+	{
+		bool onlineLobby = IsOnline;
+		bool changed = false;
+		for(int i = 0; i < players.Count; ++i)
+		{
+			PlayerDescriptor player = players[i];
+			if(player == null || player.isHost)
+				continue;
+
+			if(onlineLobby && player.type == PlayerType.Local)
+			{
+				player.type = PlayerType.Online;
+				player.locator = MakeRemotePlayerLocator(i);
+				player.aiId = null;
+				players[i] = player;
+				changed = true;
+				continue;
+			}
+
+			if(!onlineLobby && player.type == PlayerType.Online)
+			{
+				player.type = PlayerType.Local;
+				player.locator = localPlayerLocator;
+				player.aiId = null;
+				players[i] = player;
+				changed = true;
+			}
+		}
+
+		return changed;
 	}
 
 	string invitationCode;
@@ -242,6 +282,11 @@ public class HostLobby : Lobby
 		if(!IsOnline && type == PlayerType.Online)
 		{
 			Debug.LogWarning($"Cannot set player #{i}'s type to {type.ToLocalizedString()} because the lobby is offline.");
+			return;
+		}
+		if(IsOnline && type == PlayerType.Local && !players[i].isHost)
+		{
+			Debug.LogWarning($"Cannot set player #{i}'s type to {type.ToLocalizedString()} because online lobbies do not allow non-host local players.");
 			return;
 		}
 

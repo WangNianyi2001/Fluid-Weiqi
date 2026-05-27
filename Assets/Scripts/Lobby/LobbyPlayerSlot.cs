@@ -27,7 +27,7 @@ public class LobbyPlayerSlot : MonoBehaviour
 
 	public PlayerDescriptor Descriptor { get; set; }
 	int Index => Descriptor?.Index ?? -1;
-	readonly List<PlayerType> typeOptions = new() { PlayerType.Local, PlayerType.Ai };
+	readonly List<PlayerType> typeOptions = new();
 
 	[SerializeField] Graphic colorGraphic;
 	[SerializeField] Dropdown typeDropdown;
@@ -48,9 +48,22 @@ public class LobbyPlayerSlot : MonoBehaviour
 		}
 
 		if(Lobby.Current.IsOnline)
+		{
+			typeOptions.Add(PlayerType.Ai);
 			typeOptions.Add(PlayerType.Online);
+			if(Descriptor.isHost)
+				typeOptions.Insert(0, PlayerType.Local);
+		}
+		else
+		{
+			typeOptions.Add(PlayerType.Local);
+			typeOptions.Add(PlayerType.Ai);
+		}
 		typeDropdown.options = typeOptions.Select(t => new Dropdown.OptionData(t.ToLocalizedString())).ToList();
-		typeDropdown.value = typeOptions.IndexOf(Descriptor.type);
+		int typeIndex = typeOptions.IndexOf(Descriptor.type);
+		if(typeIndex < 0)
+			typeIndex = 0;
+		typeDropdown.value = typeIndex;
 
 		RefreshColorDropdown();
 		colorGraphic.color = Descriptor.color;

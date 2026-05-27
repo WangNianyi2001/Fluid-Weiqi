@@ -1,11 +1,14 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Events;
 
 public class MatchFlowControlUi : MonoBehaviour
 {
 	[SerializeField] GameObject panelRoot;
 	[SerializeField] GameObject passButtonRoot;
 	[SerializeField] GameObject requestScoringButtonRoot;
+	[SerializeField] GameObject approveScoringButtonRoot;
+	[SerializeField] GameObject rejectScoringButtonRoot;
 	[SerializeField] GameObject resignButtonRoot;
 	[SerializeField] Text autoScoringCountdownText;
 
@@ -20,6 +23,7 @@ public class MatchFlowControlUi : MonoBehaviour
 
 	protected void Start()
 	{
+		EnsureScoringResponseButtons();
 		EnsureCountdownText();
 		RefreshVisibility();
 		RefreshCountdownText();
@@ -49,35 +53,49 @@ public class MatchFlowControlUi : MonoBehaviour
 		{
 			SetRootActive(passButtonRoot, false);
 			SetRootActive(requestScoringButtonRoot, false);
+			SetRootActive(approveScoringButtonRoot, false);
+			SetRootActive(rejectScoringButtonRoot, false);
 			SetRootActive(resignButtonRoot, false);
 			SetRootActive(PanelRoot, false);
 			return;
 		}
 
-		bool hasLocalMoveRight = HasLocallyControllableMoveRight(match);
+		bool hasLocalMoveRight = false;
+		bool canRequestScoring = false;
+		bool hasOtherScoringRequests = false;
+
+		for(int i = 0; i < match.PlayerCount; ++i)
+		{
+			if(!match.IsPlayerLocallyControllable(i))
+				continue;
+			if(!match.CanPlayerMove(i))
+				continue;
+
+			hasLocalMoveRight = true;
+
+			bool hasRequestFromOthers = match.HasScoringRequestFromOtherPlayers(i);
+			hasOtherScoringRequests |= hasRequestFromOthers;
+
+			bool canThisPlayerRequest = !match.IsPlayerScoringRequested(i)
+				&& !match.IsPlayerResigned(i)
+				&& !hasRequestFromOthers;
+			canRequestScoring |= canThisPlayerRequest;
+		}
+
 		bool passVisible = match.SupportsPassAction && hasLocalMoveRight;
-		bool requestScoringVisible = match.SupportsRequestScoringAction;
-		bool resignVisible = match.SupportsResignAction;
+		canRequestScoring = match.SupportsRequestScoringAction && canRequestScoring;
+		bool approveVisible = match.SupportsRequestScoringAction && hasLocalMoveRight && hasOtherScoringRequests;
+		bool rejectVisible = match.SupportsRequestScoringAction && hasLocalMoveRight && hasOtherScoringRequests;
+		bool resignVisible = match.SupportsResignAction && hasLocalMoveRight;
 		bool countdownVisible = ShouldShowCountdown(match);
 
 		SetRootActive(passButtonRoot, passVisible);
-		SetRootActive(requestScoringButtonRoot, requestScoringVisible);
+		SetRootActive(requestScoringButtonRoot, canRequestScoring);
+		SetRootActive(approveScoringButtonRoot, approveVisible);
+		SetRootActive(rejectScoringButtonRoot, rejectVisible);
 		SetRootActive(resignButtonRoot, resignVisible);
-		SetRootActive(PanelRoot, true);
-	}
-
-	bool HasLocallyControllableMoveRight(Match match)
-	{
-		if(match == null)
-			return false;
-
-		foreach(var entry in match.PlayerMoveRights)
-		{
-			if(entry.Value && match.IsPlayerLocallyControllable(entry.Key))
-				return true;
-		}
-
-		return false;
+		bool anyVisible = passVisible || canRequestScoring || approveVisible || rejectVisible || resignVisible || countdownVisible;
+		SetRootActive(PanelRoot, anyVisible);
 	}
 
 	bool ShouldShowCountdown(Match match)
@@ -116,6 +134,44 @@ public class MatchFlowControlUi : MonoBehaviour
 		autoScoringCountdownText = text;
 	}
 
+	void EnsureScoringResponseButtons()
+	{
+		if(requestScoringButtonRoot == null)
+			return;
+
+		if(approveScoringButtonRoot == null)
+		{
+			approveScoringButtonRoot = Instantiate(requestScoringButtonRoot, requestScoringButtonRoot.transform.parent);
+			approveScoringButtonRoot.name = "Approve Scoring Button";
+			ConfigureButton(approveScoringButtonRoot, "同意点目", OnApproveScoringButtonClicked);
+		}
+
+		if(rejectScoringButtonRoot == null)
+		{
+			rejectScoringButtonRoot = Instantiate(requestScoringButtonRoot, requestScoringButtonRoot.transform.parent);
+			rejectScoringButtonRoot.name = "Reject Scoring Button";
+			ConfigureButton(rejectScoringButtonRoot, "拒绝点目", OnRejectScoringButtonClicked);
+		}
+	}
+
+	void ConfigureButton(GameObject root, string label, UnityAction onClick)
+	{
+		if(root == null)
+			return;
+
+		Text text = root.GetComponentInChildren<Text>(true);
+		if(text != null)
+			text.text = label;
+
+		Button button = root.GetComponentInChildren<Button>(true);
+		if(button == null)
+			return;
+
+		button.onClick.RemoveAllListeners();
+		if(onClick != null)
+			button.onClick.AddListener(onClick);
+	}
+
 	void RefreshCountdownText()
 	{
 		if(autoScoringCountdownText == null)
@@ -152,6 +208,16 @@ public class MatchFlowControlUi : MonoBehaviour
 	public void OnRequestScoringButtonClicked()
 	{
 		Match?.OnRequestScoringButtonClicked();
+	}
+
+	public void OnApproveScoringButtonClicked()
+	{
+		Match?.OnRequestScoringButtonClicked();
+	}
+
+	public void OnRejectScoringButtonClicked()
+	{
+		Match?.OnRejectScoringButtonClicked();
 	}
 
 	public void OnResignButtonClicked()
