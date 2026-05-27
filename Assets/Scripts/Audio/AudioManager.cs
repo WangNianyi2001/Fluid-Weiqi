@@ -24,6 +24,7 @@ public class AudioManager : MonoBehaviour
 	AudioSource sfxSource;
 	bool isBrushStrokeActive;
 	float nextBrushMoveSoundTime;
+	bool playBrushMoveLoopSfx = true;
 	#endregion
 
 	#region Unity life cycle
@@ -46,11 +47,16 @@ public class AudioManager : MonoBehaviour
 			sfxSource = gameObject.AddComponent<AudioSource>();
 
 		LoadAudioSettings();
+		ApplyPreferences(GameManager.Instance?.GetPreferences());
+		if(GameManager.Instance != null)
+			GameManager.Instance.PreferencesChanged += ApplyPreferences;
 	}
 
 	protected void OnDestroy()
 	{
 		isBrushStrokeActive = false;
+		if(GameManager.Instance != null)
+			GameManager.Instance.PreferencesChanged -= ApplyPreferences;
 		if(Instance == this)
 			Instance = null;
 	}
@@ -143,6 +149,8 @@ public class AudioManager : MonoBehaviour
 	{
 		if(!isBrushStrokeActive)
 			return;
+		if(!playBrushMoveLoopSfx)
+			return;
 
 		if(Time.unscaledTime < nextBrushMoveSoundTime)
 			return;
@@ -203,5 +211,14 @@ public class AudioManager : MonoBehaviour
 		float baseInterval = 1f / frequency;
 		float jitterScale = 1f + UnityEngine.Random.Range(-brushMoveIntervalJitter, brushMoveIntervalJitter);
 		return Mathf.Max(0.02f, baseInterval * jitterScale);
+	}
+
+	void ApplyPreferences(PreferencesData preferences)
+	{
+		if(preferences == null)
+			return;
+
+		AudioListener.volume = Mathf.Clamp01(preferences.volume);
+		playBrushMoveLoopSfx = preferences.playBrushMoveLoopSfx;
 	}
 }
