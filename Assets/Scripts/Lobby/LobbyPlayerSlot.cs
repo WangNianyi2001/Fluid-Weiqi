@@ -111,9 +111,15 @@ public class LobbyPlayerSlot : MonoBehaviour
 		}
 
 		aiDropdown.options = aiOptions.Select(a => new Dropdown.OptionData(a.AiName)).ToList();
-		int selected = string.IsNullOrWhiteSpace(Descriptor?.aiId)
-			? 0
-			: Mathf.Max(0, aiOptions.FindIndex(a => a.AiId == Descriptor.aiId));
+		aiDropdown.interactable = aiOptions.Count > 0 && (Lobby.Current?.IsHost ?? false);
+
+		int selected = 0;
+		if(!string.IsNullOrWhiteSpace(Descriptor?.aiId))
+		{
+			int matchedIndex = aiOptions.FindIndex(a => a.AiId == Descriptor.aiId);
+			if(matchedIndex >= 0)
+				selected = matchedIndex;
+		}
 		aiDropdown.SetValueWithoutNotify(selected);
 	}
 

@@ -7,6 +7,7 @@ public class HostLobby : Lobby
 {
 	public new static HostLobby Current => Lobby.Current as HostLobby;
 	public static readonly PlayerLocator HostPlayerLocator = new("host");
+	const string FallbackAiId = "lao-song";
 	readonly LobbyLocator locator;
 	readonly PlayerLocator localPlayerLocator;
 	int lobbyVersion = 0;
@@ -323,6 +324,28 @@ public class HostLobby : Lobby
 		PlayerDescriptor player = players[i];
 		if(player.type != PlayerType.Ai)
 			return;
+
+		if(GameManager.Instance != null)
+		{
+			if(string.IsNullOrWhiteSpace(aiId))
+			{
+				Debug.LogWarning($"Failed to set player #{i}'s AI because aiId is empty.");
+				return;
+			}
+
+			if(!GameManager.Instance.TryGetAiConfig(aiId, out AiConfig aiConfig))
+			{
+				Debug.LogWarning($"Failed to set player #{i}'s AI because aiId '{aiId}' was not found.");
+				return;
+			}
+
+			if(!aiConfig.SupportsMode(matchRule.modeId))
+			{
+				Debug.LogWarning($"Failed to set player #{i}'s AI to '{aiId}' because it does not support mode '{matchRule.modeId}'.");
+				return;
+			}
+		}
+
 		player.aiId = aiId;
 		players[i] = player;
 		OnPlayersChanged?.Invoke();
@@ -406,9 +429,66 @@ public class HostLobby : Lobby
 	#region Match rules
 	MatchRule matchRule;
 	public override MatchRule MatchRule => matchRule;
+
+	string ResolveFallbackAiId(string modeId)
+	{
+		if(GameManager.Instance == null)
+			return null;
+
+		if(GameManager.Instance.TryGetAiConfig(FallbackAiId, out AiConfig fallbackConfig)
+			&& fallbackConfig != null
+			&& fallbackConfig.SupportsMode(modeId))
+		{
+			return FallbackAiId;
+		}
+
+		AiConfig defaultAi = GameManager.Instance.FindFirstAiForMode(modeId);
+		return defaultAi != null ? defaultAi.AiId : null;
+	}
+
+	bool NormalizeAiSlotsForCurrentMode()
+	{
+		if(players == null || players.Count == 0)
+			return false;
+
+		string fallbackAiId = ResolveFallbackAiId(matchRule.modeId);
+		bool changed = false;
+
+		for(int i = 0; i < players.Count; ++i)
+		{
+			PlayerDescriptor player = players[i];
+			if(player == null || player.type != PlayerType.Ai)
+				continue;
+
+			bool supported = false;
+			if(!string.IsNullOrWhiteSpace(player.aiId)
+				&& GameManager.Instance != null
+				&& GameManager.Instance.TryGetAiConfig(player.aiId, out AiConfig currentAi)
+				&& currentAi != null)
+			{
+				supported = currentAi.SupportsMode(matchRule.modeId);
+			}
+
+			if(supported)
+				continue;
+
+			if(player.aiId == fallbackAiId)
+				continue;
+
+			player.aiId = fallbackAiId;
+			players[i] = player;
+			changed = true;
+		}
+
+		return changed;
+	}
+
 	public void SetMatchRule(MatchRule value)
 	{
 		matchRule = value;
+		bool playersChanged = NormalizeAiSlotsForCurrentMode();
+		if(playersChanged)
+			OnPlayersChanged?.Invoke();
 		OnMatchRuleChanged?.Invoke();
 		PublishLobbySnapshot();
 	}
