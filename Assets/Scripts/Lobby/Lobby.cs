@@ -26,6 +26,13 @@ public enum PlayerType
 	Local, Ai, Online
 }
 
+public enum LobbyMatchEndReason
+{
+	Unknown,
+	HostEnded,
+	ConnectionLost,
+}
+
 [System.Serializable]
 public struct PlayerLocator
 {
@@ -137,6 +144,7 @@ public abstract class Lobby
 	#region Status
 	public bool IsHost => this is HostLobby;
 	public bool IsOnline => Visibility != LobbyVisibility.Local;
+	public LobbyMatchEndReason LastMatchEndReason { get; protected set; } = LobbyMatchEndReason.Unknown;
 
 	public Action OnDismissed;
 	public Action OnStartingMatch;

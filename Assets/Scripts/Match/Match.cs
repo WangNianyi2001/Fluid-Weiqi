@@ -401,6 +401,7 @@ public abstract class Match : MonoBehaviour
 	{
 		RecordAcceptedAction(MatchActionType.RequestScoring, ActivePlayerIndex, Vector2.zero, 1f);
 		SetPlayerScoringRequestState(ActivePlayerIndex, true);
+		ApproveScoringForDisconnectedRemotePlayers();
 
 		for(int i = 0; i < PlayerCount; ++i)
 		{
@@ -1163,10 +1164,53 @@ public abstract class Match : MonoBehaviour
 
 	void OnNetworkConnectionStateChanged(NetworkConnectionState state)
 	{
+		if(Lobby.Current == null)
+			return;
+
+		if(Lobby.Current.IsHost)
+		{
+			if(state == NetworkConnectionState.Disconnected)
+				HostLobby.Current?.NotifyAllClientsDisconnected();
+			return;
+		}
+
+		bool isAvailable = state == NetworkConnectionState.Connected || state == NetworkConnectionState.Degraded;
 		for(int i = 0; i < players.Count; ++i)
 		{
 			if(players[i] is OnlinePlayer onlinePlayer)
-				onlinePlayer.SetConnectionState(state == NetworkConnectionState.Connected || state == NetworkConnectionState.Degraded);
+				onlinePlayer.SetConnectionState(isAvailable);
+		}
+
+		if(state == NetworkConnectionState.Disconnected && Lobby.Current is ClientLobby clientLobby)
+			clientLobby.NotifyConnectionLost();
+	}
+
+	public void NotifyOnlinePlayerDisconnected(int playerIndex)
+	{
+		if(playerIndex < 0 || playerIndex >= players.Count)
+			return;
+
+		if(players[playerIndex] is OnlinePlayer onlinePlayer)
+			onlinePlayer.SetConnectionState(false);
+	}
+
+	void ApproveScoringForDisconnectedRemotePlayers()
+	{
+		if(Lobby.Current == null || !Lobby.Current.IsHost)
+			return;
+
+		for(int i = 0; i < players.Count; ++i)
+		{
+			if(IsPlayerResigned(i))
+				continue;
+
+			if(players[i] is not OnlinePlayer onlinePlayer)
+				continue;
+
+			if(!onlinePlayer.IsRemoteProxy || onlinePlayer.IsConnected)
+				continue;
+
+			SetPlayerScoringRequestState(i, true);
 		}
 	}
 

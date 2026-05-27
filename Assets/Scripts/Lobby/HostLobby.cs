@@ -100,6 +100,7 @@ public class HostLobby : Lobby
 	public void EndMatch()
 	{
 		isMatchInProgress = false;
+		LastMatchEndReason = LobbyMatchEndReason.HostEnded;
 		PublishLobbySnapshot();
 		OnMatchEnded?.Invoke();
 	}
@@ -110,6 +111,11 @@ public class HostLobby : Lobby
 	{
 		if(!locator.IsValid)
 			return;
+		if(isMatchInProgress)
+		{
+			Debug.LogWarning($"Client '{locator}' cannot reconnect because match is already in progress.");
+			return;
+		}
 
 		for(int i = 0; i < players.Count; ++i)
 		{
@@ -150,6 +156,9 @@ public class HostLobby : Lobby
 			if(player.locator != locator)
 				continue;
 
+			if(isMatchInProgress && Match.Current != null)
+				Match.Current.NotifyOnlinePlayerDisconnected(i);
+
 			player.locator = MakeRemotePlayerLocator(i);
 			players[i] = player;
 			changed = true;
@@ -160,12 +169,26 @@ public class HostLobby : Lobby
 
 		Debug.LogWarning($"Client '{locator}' disconnected from host lobby.");
 		OnPlayersChanged?.Invoke();
-		if(isMatchInProgress)
-		{
-			EndMatch();
-			return;
-		}
 		PublishLobbySnapshot();
+	}
+
+	public void NotifyAllClientsDisconnected()
+	{
+		List<PlayerLocator> connectedClientLocators = new();
+		for(int i = 0; i < players.Count; ++i)
+		{
+			PlayerDescriptor player = players[i];
+			if(player == null || player.type != PlayerType.Online)
+				continue;
+			if(!player.locator.IsValid)
+				continue;
+			if(player.locator.id != null && player.locator.id.StartsWith("remote-", StringComparison.Ordinal))
+				continue;
+			connectedClientLocators.Add(player.locator);
+		}
+
+		for(int i = 0; i < connectedClientLocators.Count; ++i)
+			NotifyClientDisconnected(connectedClientLocators[i]);
 	}
 	#endregion
 

@@ -80,11 +80,17 @@ public class PauseMenuUi : MonoBehaviour
 		TraditionalMatchEndingUi ui = ResolveEndingUi();
 		if(ui != null)
 		{
-			ui.ShowMessage("房主已结束对局", GameScene.Lobby);
+			if(Lobby.Current.LastMatchEndReason == LobbyMatchEndReason.ConnectionLost)
+				ui.ShowMessage("网络连接已断开，无法重连", GameScene.StartMenu);
+			else
+				ui.ShowMessage("房主已结束对局", GameScene.Lobby);
 			return;
 		}
 
-		GameManager.Instance.SwitchScene(GameScene.Lobby);
+		if(Lobby.Current.LastMatchEndReason == LobbyMatchEndReason.ConnectionLost)
+			GameManager.Instance.SwitchScene(GameScene.StartMenu);
+		else
+			GameManager.Instance.SwitchScene(GameScene.Lobby);
 	}
 
 	TraditionalMatchEndingUi ResolveEndingUi()

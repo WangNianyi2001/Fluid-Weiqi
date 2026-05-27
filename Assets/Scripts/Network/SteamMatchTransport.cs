@@ -266,7 +266,7 @@ public class SteamMatchTransport : IMatchTransport
 	void OnSessionFailed(SteamNetworkingMessagesSessionFailed_t data)
 	{
 		Debug.LogWarning($"[SteamMatchTransport] Session failed with {data.m_info.m_identityRemote.GetSteamID()}");
-		SetConnectionState(NetworkConnectionState.Degraded);
+		SetConnectionState(NetworkConnectionState.Disconnected);
 	}
 
 	void OnSessionRequest(SteamNetworkingMessagesSessionRequest_t data)

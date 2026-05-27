@@ -19,6 +19,8 @@ public class OnlinePlayer : MatchPlayer
 
 	public override bool IsAlive => isConnected;
 	public override bool CanReceiveLocalInput => role == OnlinePlayerRole.LocalToRemote && isConnected;
+	public bool IsConnected => isConnected;
+	public bool IsRemoteProxy => role == OnlinePlayerRole.RemoteToLocal;
 
 	public void Initialize(Match match, int playerIndex, OnlinePlayerRole role, PlayerLocator locator)
 	{
