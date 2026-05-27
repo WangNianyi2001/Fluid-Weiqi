@@ -150,4 +150,14 @@ public class LobbyPlayerSlot : MonoBehaviour
 	{
 		HostLobby.Current?.RemovePlayer(Index);
 	}
+
+	public void OnMoveUpButtonClicked()
+	{
+		HostLobby.Current?.MovePlayerUp(Index);
+	}
+
+	public void OnMoveDownButtonClicked()
+	{
+		HostLobby.Current?.MovePlayerDown(Index);
+	}
 }

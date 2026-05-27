@@ -298,6 +298,36 @@ public class HostLobby : Lobby
 		PublishLobbySnapshot();
 	}
 
+	public void MovePlayerUp(int i)
+	{
+		MovePlayer(i, i - 1);
+	}
+
+	public void MovePlayerDown(int i)
+	{
+		MovePlayer(i, i + 1);
+	}
+
+	void MovePlayer(int fromIndex, int toIndex)
+	{
+		if(isMatchInProgress)
+		{
+			Debug.LogWarning("Cannot reorder players while a match is in progress.");
+			return;
+		}
+
+		if(!players.IsValidIndex(fromIndex) || !players.IsValidIndex(toIndex))
+			return;
+		if(fromIndex == toIndex)
+			return;
+
+		PlayerDescriptor moved = players[fromIndex];
+		players.RemoveAt(fromIndex);
+		players.Insert(toIndex, moved);
+		OnPlayersChanged?.Invoke();
+		PublishLobbySnapshot();
+	}
+
 	public void RemovePlayer(int i)
 	{
 		if(!players.IsValidIndex(i))
