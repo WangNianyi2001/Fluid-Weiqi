@@ -57,7 +57,7 @@ public class MatchBuilder : MonoBehaviour
 			return;
 		}
 
-		if(!Lobby.Current.ValidateStartingCondition(out string errorMessage))
+		if(!Lobby.Current.ValidateStartingCondition(out string errorMessage, out List<string> _))
 		{
 			Debug.LogError($"Failed to build match: {errorMessage}");
 			GameManager.Instance.LoadDefaultLobby();

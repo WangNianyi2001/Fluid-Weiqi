@@ -340,26 +340,20 @@ public class LobbyUi : MonoBehaviour
 			return;
 		}
 
-		bool valid = Lobby.Current.ValidateStartingCondition(out string errorMessage);
+		bool valid = Lobby.Current.ValidateStartingCondition(out string errorMessage, out List<string> warningMessages);
 		startButton.interactable = valid;
 
-		Text messageText = warningText != null ? warningText : errorText;
-		if(messageText != null)
+		if(errorText != null)
 		{
-			messageText.gameObject.SetActive(!valid);
-			messageText.text = valid ? string.Empty : errorMessage;
+			errorText.gameObject.SetActive(!valid);
+			errorText.text = valid ? string.Empty : errorMessage;
 		}
 
-		if(errorText != null && errorText != messageText)
+		if(warningText != null)
 		{
-			errorText.gameObject.SetActive(false);
-			errorText.text = string.Empty;
-		}
-
-		if(warningText != null && warningText != messageText)
-		{
-			warningText.gameObject.SetActive(false);
-			warningText.text = string.Empty;
+			bool showWarning = valid && warningMessages != null && warningMessages.Count > 0;
+			warningText.gameObject.SetActive(showWarning);
+			warningText.text = showWarning ? string.Join("\n", warningMessages) : string.Empty;
 		}
 	}
 
