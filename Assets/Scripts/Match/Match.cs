@@ -669,6 +669,13 @@ public abstract class Match : MonoBehaviour
 		remove => onPlayerResignedStateChanged -= value;
 	}
 
+	protected Action onPlayerConnectionStateChanged;
+	public event Action OnPlayerConnectionStateChanged
+	{
+		add => onPlayerConnectionStateChanged += value;
+		remove => onPlayerConnectionStateChanged -= value;
+	}
+
 	public IReadOnlyDictionary<int, bool> PlayerMoveRights => playerMoveRights;
 	public IReadOnlyDictionary<int, bool> PlayerPassStates => playerPassStates;
 	public IReadOnlyDictionary<int, bool> PlayerScoringRequestStates => playerScoringRequestStates;
@@ -722,6 +729,17 @@ public abstract class Match : MonoBehaviour
 		if(playerIndex < 0 || playerIndex >= PlayerCount)
 			return false;
 		return playerResignedStates.TryGetValue(playerIndex, out bool resigned) && resigned;
+	}
+
+	public bool IsPlayerOfflineOnline(int playerIndex)
+	{
+		if(playerIndex < 0 || playerIndex >= players.Count)
+			return false;
+
+		if(players[playerIndex] is not OnlinePlayer onlinePlayer)
+			return false;
+
+		return !onlinePlayer.IsConnected;
 	}
 
 	bool TryResolveLocalActionPlayerIndex(out int playerIndex)
@@ -1175,11 +1193,14 @@ public abstract class Match : MonoBehaviour
 		}
 
 		bool isAvailable = state == NetworkConnectionState.Connected || state == NetworkConnectionState.Degraded;
+		bool changed = false;
 		for(int i = 0; i < players.Count; ++i)
 		{
-			if(players[i] is OnlinePlayer onlinePlayer)
-				onlinePlayer.SetConnectionState(isAvailable);
+			if(SetOnlinePlayerConnectionState(i, isAvailable))
+				changed = true;
 		}
+		if(changed)
+			onPlayerConnectionStateChanged?.Invoke();
 
 		if(state == NetworkConnectionState.Disconnected && Lobby.Current is ClientLobby clientLobby)
 			clientLobby.NotifyConnectionLost();
@@ -1190,8 +1211,23 @@ public abstract class Match : MonoBehaviour
 		if(playerIndex < 0 || playerIndex >= players.Count)
 			return;
 
-		if(players[playerIndex] is OnlinePlayer onlinePlayer)
-			onlinePlayer.SetConnectionState(false);
+		if(SetOnlinePlayerConnectionState(playerIndex, false))
+			onPlayerConnectionStateChanged?.Invoke();
+	}
+
+	bool SetOnlinePlayerConnectionState(int playerIndex, bool connected)
+	{
+		if(playerIndex < 0 || playerIndex >= players.Count)
+			return false;
+
+		if(players[playerIndex] is not OnlinePlayer onlinePlayer)
+			return false;
+
+		if(onlinePlayer.IsConnected == connected)
+			return false;
+
+		onlinePlayer.SetConnectionState(connected);
+		return true;
 	}
 
 	void ApproveScoringForDisconnectedRemotePlayers()

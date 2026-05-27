@@ -13,6 +13,7 @@ public class PlayerStatusUi : MonoBehaviour
 		Match.OnPlayerScoringRequestStateChanged += OnScoringRequestStateChanged;
 		Match.OnPlayerResignedStateChanged += OnResignedStateChanged;
 		Match.OnPlayerMoveRightChanged += OnPlayerMoveRightChanged;
+		Match.OnPlayerConnectionStateChanged += OnPlayerConnectionStateChanged;
 	}
 
 	protected void Start()
@@ -22,6 +23,7 @@ public class PlayerStatusUi : MonoBehaviour
 		RefreshPassStates();
 		RefreshScoringRequestStates();
 		RefreshResignedStates();
+		RefreshOfflineStates();
 		RefreshActivePlayers();
 	}
 
@@ -34,6 +36,7 @@ public class PlayerStatusUi : MonoBehaviour
 			Match.OnPlayerScoringRequestStateChanged -= OnScoringRequestStateChanged;
 			Match.OnPlayerResignedStateChanged -= OnResignedStateChanged;
 			Match.OnPlayerMoveRightChanged -= OnPlayerMoveRightChanged;
+			Match.OnPlayerConnectionStateChanged -= OnPlayerConnectionStateChanged;
 		}
 	}
 	#endregion
@@ -55,6 +58,7 @@ public class PlayerStatusUi : MonoBehaviour
 			row.IsPassed = false;
 			row.IsScoringRequested = false;
 			row.IsResigned = false;
+			row.IsOffline = false;
 			rows.Add(row);
 		}
 	}
@@ -150,6 +154,17 @@ public class PlayerStatusUi : MonoBehaviour
 	void OnResignedStateChanged()
 	{
 		RefreshResignedStates();
+	}
+
+	void RefreshOfflineStates()
+	{
+		for(int i = 0; i < rows.Count; ++i)
+			rows[i].IsOffline = Match.IsPlayerOfflineOnline(i);
+	}
+
+	void OnPlayerConnectionStateChanged()
+	{
+		RefreshOfflineStates();
 	}
 	#endregion
 }

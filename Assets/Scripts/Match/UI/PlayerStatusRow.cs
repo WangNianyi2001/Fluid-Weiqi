@@ -12,15 +12,14 @@ public class PlayerStatusRow : MonoBehaviour
 
 	[SerializeField] Text nameText;
 	string baseName;
-	bool isScoringRequested;
-	bool isResigned;
 	public string Name
 	{
 		get => baseName;
 		set
 		{
 			baseName = value;
-			RefreshNameText();
+			if(nameText != null)
+				nameText.text = baseName ?? string.Empty;
 		}
 	}
 
@@ -39,45 +38,30 @@ public class PlayerStatusRow : MonoBehaviour
 		set => currentTurnIndicator.SetActive(value);
 	}
 
-	[SerializeField] Graphic passedIndicator;
+	[SerializeField] GameObject passedIndicator;
 	public bool IsPassed
 	{
-		set
-		{
-			if(passedIndicator != null)
-				passedIndicator.enabled = value;
-		}
+		set => passedIndicator?.SetActive(value);
 	}
+
+	[SerializeField] GameObject scoringRequestedIndicator;
 
 	public bool IsScoringRequested
 	{
-		set
-		{
-			isScoringRequested = value;
-			RefreshNameText();
-		}
+		set => scoringRequestedIndicator?.SetActive(value);
 	}
+
+	[SerializeField] GameObject resignedIndicator;
 
 	public bool IsResigned
 	{
-		set
-		{
-			isResigned = value;
-			RefreshNameText();
-		}
+		set => resignedIndicator?.SetActive(value);
 	}
 
-	void RefreshNameText()
+	[SerializeField] GameObject offlineIndicator;
+
+	public bool IsOffline
 	{
-		if(nameText == null)
-			return;
-
-		string suffix = string.Empty;
-		if(isScoringRequested)
-			suffix += " [申请点目]";
-		if(isResigned)
-			suffix += " [已认输]";
-
-		nameText.text = (baseName ?? string.Empty) + suffix;
+		set => offlineIndicator?.SetActive(value);
 	}
 }
