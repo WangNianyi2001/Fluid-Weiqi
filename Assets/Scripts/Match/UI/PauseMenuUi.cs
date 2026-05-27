@@ -81,7 +81,7 @@ public class PauseMenuUi : MonoBehaviour
 		if(ui != null)
 		{
 			if(Lobby.Current.LastMatchEndReason == LobbyMatchEndReason.ConnectionLost)
-				ui.ShowMessage("网络连接已断开，无法重连", GameScene.StartMenu);
+				ui.ShowMessage("网络连接已断开", GameScene.StartMenu);
 			else
 				ui.ShowMessage("房主已结束对局", GameScene.Lobby);
 			return;
