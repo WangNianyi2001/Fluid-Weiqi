@@ -6,7 +6,7 @@ using System.IO;
 
 public enum GameScene
 {
-	StartMenu, Lobby, BrowseLobby, Match
+	StartMenu, Match
 }
 
 public class GameManager : MonoBehaviour
@@ -329,12 +329,7 @@ public class GameManager : MonoBehaviour
 
 	public void CreateLobby()
 	{
-		LoadDefaultLobby(_ => SwitchScene(GameScene.Lobby));
-	}
-
-	public void BrowseLobbies()
-	{
-		SwitchScene(GameScene.BrowseLobby);
+		LoadDefaultLobby();
 	}
 
 	public void ExitLobby()
@@ -354,10 +349,21 @@ public class GameManager : MonoBehaviour
 		if(Lobby != null)
 			LobbyService?.LeaveLobby(Lobby.Locator);
 
-		SwitchScene(GameScene.StartMenu);
+		if(IsMatchSceneActive())
+			SwitchScene(GameScene.StartMenu);
 		Lobby = null;
 	}
 	#endregion
+
+	bool IsStartMenuSceneActive()
+	{
+		return SceneManager.GetActiveScene().name == "Start Menu";
+	}
+
+	bool IsMatchSceneActive()
+	{
+		return SceneManager.GetActiveScene().name == "Match";
+	}
 
 	#region Misc
 	public void SwitchScene(GameScene scene)
@@ -365,8 +371,6 @@ public class GameManager : MonoBehaviour
 		string sceneName = scene switch
 		{
 			GameScene.StartMenu => "Start Menu",
-			GameScene.Lobby => "Lobby",
-			GameScene.BrowseLobby => "Browse Lobby",
 			GameScene.Match => "Match",
 			_ => throw new System.ArgumentOutOfRangeException()
 		};

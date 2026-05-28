@@ -9,12 +9,6 @@ EditorBuildSettings:
     path: Assets/Scenes/Start Menu.unity
     guid: 5f848b96b32db9a458cafc2885bbb06b
   - enabled: 1
-    path: Assets/Scenes/Lobby.unity
-    guid: 9defc15a5442e4c4ca6f2c1270e06245
-  - enabled: 1
-    path: Assets/Scenes/Browse Lobby.unity
-    guid: 6a52aef4fcab2214eb087d725b9939f5
-  - enabled: 1
     path: Assets/Scenes/Match.unity
     guid: a50b489eaa8d8824381930d73e7859a3
   m_configObjects: {}

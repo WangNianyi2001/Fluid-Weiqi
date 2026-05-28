@@ -5,6 +5,8 @@ using System.Collections.Generic;
 public class BrowseLobbyUi : MonoBehaviour
 {
 	const int DefaultPageSize = 8;
+	bool isInitialized;
+	bool suppressBackActionOnDisable;
 
 	[Header("Search & Navigation")]
 	[SerializeField] InputField searchInput;
@@ -21,9 +23,6 @@ public class BrowseLobbyUi : MonoBehaviour
 	[SerializeField] InputField inviteCodeInput;
 	[SerializeField] Button joinByCodeButton;
 
-	[Header("Navigation")]
-	[SerializeField] Button backButton;
-
 	int currentOffset = 0;
 	string currentFilter = "";
 	bool isLoading = false;
@@ -34,14 +33,36 @@ public class BrowseLobbyUi : MonoBehaviour
 	ILobbyService Service => GameManager.Instance?.LobbyService;
 
 	#region Unity life cycle
-	protected void Start()
+	protected void OnEnable()
 	{
+		EnsureInitialized();
+		suppressBackActionOnDisable = false;
+		currentOffset = 0;
+		currentFilter = searchInput != null ? searchInput.text ?? string.Empty : string.Empty;
+		isLoading = false;
+		SetInteractable(true);
+		Refresh();
+	}
+
+	protected void OnDisable()
+	{
+		if(suppressBackActionOnDisable)
+			return;
+
+		StartMenu.Instance.ReturnToMain();
+	}
+
+	void EnsureInitialized()
+	{
+		if(isInitialized)
+			return;
+
 		if(pageSize <= 0)
 			pageSize = DefaultPageSize;
 
-		searchInput.onEndEdit.AddListener(OnSearchEndEdit);
-
-		Refresh();
+		if(searchInput != null)
+			searchInput.onEndEdit.AddListener(OnSearchEndEdit);
+		isInitialized = true;
 	}
 	#endregion
 
@@ -69,11 +90,6 @@ public class BrowseLobbyUi : MonoBehaviour
 		currentFilter = value ?? "";
 		currentOffset = 0;
 		Refresh();
-	}
-
-	public void OnBackButtonClicked()
-	{
-		GameManager.Instance?.SwitchScene(GameScene.StartMenu);
 	}
 	#endregion
 
@@ -175,7 +191,8 @@ public class BrowseLobbyUi : MonoBehaviour
 				result.visibility,
 				result.matchRule,
 				result.players);
-			GameManager.Instance?.SwitchScene(GameScene.Lobby);
+			suppressBackActionOnDisable = true;
+			StartMenu.Instance.SwitchToPanel(StartMenu.Instance.LobbyPanel);
 		}
 		else
 			SetInteractable(true);
@@ -191,8 +208,6 @@ public class BrowseLobbyUi : MonoBehaviour
 			inviteCodeInput.interactable = value;
 		if(joinByCodeButton != null)
 			joinByCodeButton.interactable = value;
-		if(backButton != null)
-			backButton.interactable = value;
 	}
 	#endregion
 }

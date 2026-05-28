@@ -70,7 +70,7 @@ public class PauseMenuUi : MonoBehaviour
 
 		if(Lobby.Current == null || Lobby.Current.IsHost)
 		{
-			GameManager.Instance.SwitchScene(GameScene.Lobby);
+			GameManager.Instance.SwitchScene(GameScene.StartMenu);
 			return;
 		}
 
@@ -83,14 +83,14 @@ public class PauseMenuUi : MonoBehaviour
 			if(Lobby.Current.LastMatchEndReason == LobbyMatchEndReason.ConnectionLost)
 				ui.ShowMessage("网络连接已断开", GameScene.StartMenu);
 			else
-				ui.ShowMessage("房主已结束对局", GameScene.Lobby);
+				ui.ShowMessage("房主已结束对局", GameScene.StartMenu);
 			return;
 		}
 
 		if(Lobby.Current.LastMatchEndReason == LobbyMatchEndReason.ConnectionLost)
 			GameManager.Instance.SwitchScene(GameScene.StartMenu);
 		else
-			GameManager.Instance.SwitchScene(GameScene.Lobby);
+			GameManager.Instance.SwitchScene(GameScene.StartMenu);
 	}
 
 	TraditionalMatchEndingUi ResolveEndingUi()

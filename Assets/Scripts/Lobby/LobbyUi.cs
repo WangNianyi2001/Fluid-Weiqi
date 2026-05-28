@@ -2,87 +2,150 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Collections.Generic;
 using System.Linq;
+using System.Collections;
 
 public class LobbyUi : MonoBehaviour
 {
+	bool isInitialized;
+	Lobby observedLobby;
+	bool suppressBackActionOnDisable;
+	Coroutine waitForLobbyCoroutine;
+
 	#region Unity life cycle
-	protected void Start()
+	protected void OnEnable()
 	{
-#if DEBUG && UNITY_EDITOR
-		// Debug
-		if(Lobby.Current == null)
+		HandlePanelActivated();
+	}
+
+	void OnPanelOpened()
+	{
+		HandlePanelActivated();
+	}
+
+	protected void OnDisable()
+	{
+		if(waitForLobbyCoroutine != null)
 		{
-			Debug.LogWarning("Creating debug lobby.");
-			GameManager.Instance.CreateLobby();
-			return;
+			StopCoroutine(waitForLobbyCoroutine);
+			waitForLobbyCoroutine = null;
 		}
-#endif
+
+		UnbindLobby();
+		if(!suppressBackActionOnDisable)
+		{
+			if(Lobby.Current?.IsHost ?? true)
+				HostLobby.Current?.Dismiss();
+			else
+				LeaveLobby();
+		}
+	}
+
+	void HandlePanelActivated()
+	{
+		suppressBackActionOnDisable = false;
+		EnsureInitialized();
+
+		if(waitForLobbyCoroutine != null)
+		{
+			StopCoroutine(waitForLobbyCoroutine);
+			waitForLobbyCoroutine = null;
+		}
 
 		if(Lobby.Current == null)
+		{
+			if(GameManager.Instance != null)
+				GameManager.Instance.CreateLobby();
+			waitForLobbyCoroutine = StartCoroutine(CoWaitForLobbyAndRefresh());
+			return;
+		}
+
+		RefreshFromCurrentLobby();
+	}
+
+	IEnumerator CoWaitForLobbyAndRefresh()
+	{
+		while(isActiveAndEnabled && Lobby.Current == null)
+			yield return null;
+
+		waitForLobbyCoroutine = null;
+		if(!isActiveAndEnabled)
+			yield break;
+		if(Lobby.Current == null)
+			yield break;
+
+		RefreshFromCurrentLobby();
+	}
+
+	void RefreshFromCurrentLobby()
+	{
+		BindLobby(Lobby.Current);
+
+		if(observedLobby == null)
 		{
 			Debug.LogError("No lobby present.");
 			return;
 		}
 
-		Lobby.Current.OnDismissed += OnLobbyDismissed;
-		Lobby.Current.OnStartingMatch += OnStartingMatch;
-
-		// Lobby settings
 		SetVisibilityOptions(allVisibilityOptions);
-		visibilityDropdown.onValueChanged.AddListener(OnVisibilityDropdownValueChanged);
-		Lobby.Current.OnVisibilityChanged += OnVisibilityChanged;
-		RefreshLobbySettingsUi();
-
-		// Player settings
-		Lobby.Current.OnPlayersChanged += OnPlayersChanged;
-		ReconstructPlayerSlots();
-
-		// Match rule
 		SetMatchModeOptions(GameManager.Instance != null ? GameManager.Instance.LegacyMatchModeConfigs : new List<MatchModeConfig>());
-		matchModeDropdown.onValueChanged.AddListener(OnMatchModeDropdownValueChanged);
-		boardSizeSlider.onValueChanged.AddListener(OnBoardSizeSliderValueChanged);
-		stoneHardnessSlider.onValueChanged.AddListener(OnStoneHardnessSliderValueChanged);
-		SetBoardShapeOptions(allBoardShapeOptions);
-		boardShapeDropdown.onValueChanged.AddListener(OnBoardShapeDropdownValueChanged);
-		shrinkingToggle.onValueChanged.AddListener(OnShrinkingToggleValueChanged);
-		shrinkSpeedSlider.onValueChanged.AddListener(OnShrinkSpeedSliderValueChanged);
-		Lobby.Current.OnMatchRuleChanged += OnMatchRuleChanged;
+		RefreshLobbySettingsUi();
+		ReconstructPlayerSlots();
 		RefreshMatchRuleArea();
 
-		// Footer
-		startButton.gameObject.SetActive(Lobby.Current.IsHost);
-		startButton.interactable = Lobby.Current.IsHost;
+		startButton.gameObject.SetActive(observedLobby.IsHost);
+		startButton.interactable = observedLobby.IsHost;
 		RefreshHostEditableState();
 		RefreshFooterArea();
 	}
 
-	protected void OnDestroy()
+	void EnsureInitialized()
 	{
-		if(Lobby.Current != null)
-		{
-			Lobby.Current.OnDismissed -= OnLobbyDismissed;
-			Lobby.Current.OnStartingMatch -= OnStartingMatch;
-			Lobby.Current.OnVisibilityChanged -= OnVisibilityChanged;
-			Lobby.Current.OnPlayersChanged -= OnPlayersChanged;
-			Lobby.Current.OnMatchRuleChanged -= OnMatchRuleChanged;
-		}
+		if(isInitialized)
+			return;
+
+		visibilityDropdown.onValueChanged.AddListener(OnVisibilityDropdownValueChanged);
+		matchModeDropdown.onValueChanged.AddListener(OnMatchModeDropdownValueChanged);
+		boardSizeSlider.onValueChanged.AddListener(OnBoardSizeSliderValueChanged);
+		stoneHardnessSlider.onValueChanged.AddListener(OnStoneHardnessSliderValueChanged);
+		boardShapeDropdown.onValueChanged.AddListener(OnBoardShapeDropdownValueChanged);
+		shrinkingToggle.onValueChanged.AddListener(OnShrinkingToggleValueChanged);
+		shrinkSpeedSlider.onValueChanged.AddListener(OnShrinkSpeedSliderValueChanged);
+		SetBoardShapeOptions(allBoardShapeOptions);
+		isInitialized = true;
 	}
+
+	void BindLobby(Lobby lobby)
+	{
+		if(observedLobby == lobby)
+			return;
+
+		UnbindLobby();
+		observedLobby = lobby;
+		if(observedLobby == null)
+			return;
+
+		observedLobby.OnDismissed += OnLobbyDismissed;
+		observedLobby.OnStartingMatch += OnStartingMatch;
+		observedLobby.OnVisibilityChanged += OnVisibilityChanged;
+		observedLobby.OnPlayersChanged += OnPlayersChanged;
+		observedLobby.OnMatchRuleChanged += OnMatchRuleChanged;
+	}
+
+	void UnbindLobby()
+	{
+		if(observedLobby == null)
+			return;
+
+		observedLobby.OnDismissed -= OnLobbyDismissed;
+		observedLobby.OnStartingMatch -= OnStartingMatch;
+		observedLobby.OnVisibilityChanged -= OnVisibilityChanged;
+		observedLobby.OnPlayersChanged -= OnPlayersChanged;
+		observedLobby.OnMatchRuleChanged -= OnMatchRuleChanged;
+		observedLobby = null;
+	}
+
 	#endregion
-
 	#region Life cycle
-	public void OnCloseButtonClicked()
-	{
-		if(Lobby.Current?.IsHost ?? true)
-			HostLobby.Current?.Dismiss();
-		else
-			LeaveLobby();
-	}
-
-	void ReturnToStartMenu()
-	{
-		GameManager.Instance.SwitchScene(GameScene.StartMenu);
-	}
-
 	void LeaveLobby()
 	{
 		GameManager.Instance.ExitLobby();
@@ -91,11 +154,13 @@ public class LobbyUi : MonoBehaviour
 	void OnLobbyDismissed()
 	{
 		// TODO: Show message
-		ReturnToStartMenu();
+		suppressBackActionOnDisable = true;
+		StartMenu.Instance.ReturnToMain();
 	}
 
 	void OnStartingMatch()
 	{
+		suppressBackActionOnDisable = true;
 		GameManager.Instance.SwitchScene(GameScene.Match);
 	}
 	#endregion

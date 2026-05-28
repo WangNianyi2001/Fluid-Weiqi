@@ -71,10 +71,15 @@ public class UiManager : MonoBehaviour
 		}
 
 		// Show new panel
+		bool wasActive = newPanel != null && newPanel.activeSelf;
 		if(newState.isInstantiated)
 			newPanel = Instantiate(newPanel);
 		newPanel.SetActive(true);
 		panelStack.Push((newPanel, newState));
+
+		// If the panel was already active, OnEnable won't run again.
+		if(wasActive)
+			newPanel.SendMessage("OnPanelOpened", SendMessageOptions.DontRequireReceiver);
 	}
 
 	/// <summary>

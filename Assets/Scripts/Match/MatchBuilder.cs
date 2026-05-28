@@ -61,7 +61,7 @@ public class MatchBuilder : MonoBehaviour
 		{
 			Debug.LogError($"Failed to build match: {errorMessage}");
 			GameManager.Instance.LoadDefaultLobby();
-			GameManager.Instance.SwitchScene(GameScene.Lobby);
+			GameManager.Instance.SwitchScene(GameScene.StartMenu);
 			Destroy(this);
 			return;
 		}
