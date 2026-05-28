@@ -1,6 +1,8 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using System.Collections.Generic;
+using System;
+using System.IO;
 
 public enum GameScene
 {
@@ -10,6 +12,7 @@ public enum GameScene
 public class GameManager : MonoBehaviour
 {
 	public static GameManager Instance { get; private set; }
+	public event Action<PreferencesData> PreferencesChanged;
 
 	readonly Dictionary<string, MatchModeConfig> matchModeConfigById = new();
 	readonly Dictionary<string, AiConfig> aiConfigById = new();
@@ -21,6 +24,8 @@ public class GameManager : MonoBehaviour
 	public string DefaultMatchModeId { get; private set; }
 	public GameObject DefaultMatchSkinPrefab { get; private set; }
 	public GameObject DefaultSphericalMatchSkinPrefab { get; private set; }
+	public PreferencesData Preferences { get; private set; }
+	string preferencesPath;
 
 	#region Game initialization
 	[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -39,6 +44,8 @@ public class GameManager : MonoBehaviour
 	{
 		Instance = this;
 		DontDestroyOnLoad(gameObject);
+		preferencesPath = Path.Combine(Application.persistentDataPath, "preferences.json");
+		LoadPreferences();
 		InitializeMatchModeConfigs();
 
 		// Create audio manager
@@ -57,6 +64,75 @@ public class GameManager : MonoBehaviour
 	{
 		if(Instance == this)
 			Instance = null;
+	}
+	#endregion
+
+	#region Preferences
+	public PreferencesData GetPreferences()
+	{
+		if(Preferences == null)
+			LoadPreferences();
+		return Preferences;
+	}
+
+	public void SavePreferences()
+	{
+		if(Preferences == null)
+			Preferences = new PreferencesData();
+
+		NormalizePreferences(Preferences);
+
+		try
+		{
+			string directory = Path.GetDirectoryName(preferencesPath);
+			if(!string.IsNullOrEmpty(directory))
+				Directory.CreateDirectory(directory);
+
+			string json = JsonUtility.ToJson(Preferences, true);
+			File.WriteAllText(preferencesPath, json);
+		}
+		catch(Exception e)
+		{
+			Debug.LogWarning($"GameManager: Failed to save preferences to {preferencesPath}. {e.Message}");
+		}
+
+		PreferencesChanged?.Invoke(Preferences);
+	}
+
+	void LoadPreferences()
+	{
+		PreferencesData loaded = null;
+
+		if(File.Exists(preferencesPath))
+		{
+			try
+			{
+				string json = File.ReadAllText(preferencesPath);
+				if(!string.IsNullOrWhiteSpace(json))
+					loaded = JsonUtility.FromJson<PreferencesData>(json);
+			}
+			catch(Exception e)
+			{
+				Debug.LogWarning($"GameManager: Failed to load preferences from {preferencesPath}. {e.Message}");
+			}
+		}
+
+		Preferences = loaded ?? new PreferencesData();
+		NormalizePreferences(Preferences);
+		PreferencesChanged?.Invoke(Preferences);
+
+		if(loaded == null)
+			SavePreferences();
+	}
+
+	void NormalizePreferences(PreferencesData data)
+	{
+		if(data == null)
+			return;
+
+		data.volume = Mathf.Clamp01(data.volume);
+		if(data.languageIndex < 0)
+			data.languageIndex = 0;
 	}
 	#endregion
 

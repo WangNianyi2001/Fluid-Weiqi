@@ -3,6 +3,7 @@ using UnityEngine;
 public class PauseMenuUi : MonoBehaviour
 {
 	[SerializeField] GameObject pauseMenu;
+	TraditionalMatchEndingUi endingUi;
 
 	protected void Awake()
 	{
@@ -64,8 +65,47 @@ public class PauseMenuUi : MonoBehaviour
 	{
 		if(GameManager.Instance == null)
 			return;
+
 		ClosePauseMenu();
-		GameManager.Instance.SwitchScene(GameScene.Lobby);
+
+		if(Lobby.Current == null || Lobby.Current.IsHost)
+		{
+			GameManager.Instance.SwitchScene(GameScene.Lobby);
+			return;
+		}
+
+		if(Match.Current != null)
+			Match.Current.InputEnabled = false;
+
+		TraditionalMatchEndingUi ui = ResolveEndingUi();
+		if(ui != null)
+		{
+			if(Lobby.Current.LastMatchEndReason == LobbyMatchEndReason.ConnectionLost)
+				ui.ShowMessage("网络连接已断开", GameScene.StartMenu);
+			else
+				ui.ShowMessage("房主已结束对局", GameScene.Lobby);
+			return;
+		}
+
+		if(Lobby.Current.LastMatchEndReason == LobbyMatchEndReason.ConnectionLost)
+			GameManager.Instance.SwitchScene(GameScene.StartMenu);
+		else
+			GameManager.Instance.SwitchScene(GameScene.Lobby);
+	}
+
+	TraditionalMatchEndingUi ResolveEndingUi()
+	{
+		if(endingUi != null)
+			return endingUi;
+
+		Canvas canvas = GetComponentInParent<Canvas>(true);
+		if(canvas != null)
+			endingUi = canvas.GetComponentInChildren<TraditionalMatchEndingUi>(true);
+
+		if(endingUi == null)
+			endingUi = FindObjectOfType<TraditionalMatchEndingUi>(true);
+
+		return endingUi;
 	}
 
 	void OnLobbyDismissed()

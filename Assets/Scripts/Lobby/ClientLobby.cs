@@ -43,7 +43,10 @@ public class ClientLobby : Lobby
 		if(!wasInMatch && isMatchInProgress)
 			NotifyMatchStarting();
 		else if(wasInMatch && !isMatchInProgress)
+		{
+			LastMatchEndReason = LobbyMatchEndReason.HostEnded;
 			NotifyMatchEnded();
+		}
 	}
 
 	public override string GetInvitationCode() =>
@@ -73,6 +76,27 @@ public class ClientLobby : Lobby
 
 	public void NotifyLobbyDismissed()
 	{
+		if(isMatchInProgress)
+		{
+			isMatchInProgress = false;
+			LastMatchEndReason = LobbyMatchEndReason.ConnectionLost;
+			OnMatchEnded?.Invoke();
+			return;
+		}
+
+		OnDismissed?.Invoke();
+	}
+
+	public void NotifyConnectionLost()
+	{
+		if(isMatchInProgress)
+		{
+			isMatchInProgress = false;
+			LastMatchEndReason = LobbyMatchEndReason.ConnectionLost;
+			OnMatchEnded?.Invoke();
+			return;
+		}
+
 		OnDismissed?.Invoke();
 	}
 

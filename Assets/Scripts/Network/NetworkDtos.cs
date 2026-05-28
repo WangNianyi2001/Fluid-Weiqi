@@ -15,6 +15,7 @@ public enum MatchActionType
 	Pass,
 	Remove,
 	RequestScoring,
+	RejectScoring,
 	Resign,
 }
 
@@ -38,6 +39,7 @@ public enum MatchDeltaOpType
 	Pass,
 	Remove,
 	RequestScoring,
+	RejectScoring,
 	Resign,
 }
 

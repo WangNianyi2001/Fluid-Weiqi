@@ -41,7 +41,7 @@ public class LocalPlayer : MatchPlayer
 			input.OnRemove -= OnRemove;
 			input.OnPass -= OnPass;
 			EndBrushStrokeSfx();
-			Match.ReceiveCursorExit();
+			Match.ReceiveCursorExit(PlayerIndex);
 		}
 	}
 
@@ -83,21 +83,21 @@ public class LocalPlayer : MatchPlayer
 	{
 		if(!receivingMove)
 			return;
-		Match.ReceiveCursorEnter(position);
+		Match.ReceiveCursorEnter(PlayerIndex, position);
 	}
 
 	void OnCursorMove(Vector2 position)
 	{
 		if(!receivingMove)
 			return;
-		Match.ReceiveCursorMove(position);
+		Match.ReceiveCursorMove(PlayerIndex, position);
 	}
 
 	void OnCursorExit()
 	{
 		if(!receivingMove)
 			return;
-		Match.ReceiveCursorExit();
+		Match.ReceiveCursorExit(PlayerIndex);
 	}
 
 	void OnPlace(Vector2 position)

@@ -29,7 +29,7 @@ public class PaintingMatchModeConfig : MatchModeConfig
 
 			if(localPlayerCount > 1)
 			{
-				errorMessage = "Painting 模式不支持多个本地玩家。";
+				errorMessage = "画笔模式不支持多个本地玩家。";
 				return false;
 			}
 		}

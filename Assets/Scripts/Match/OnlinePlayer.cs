@@ -19,6 +19,8 @@ public class OnlinePlayer : MatchPlayer
 
 	public override bool IsAlive => isConnected;
 	public override bool CanReceiveLocalInput => role == OnlinePlayerRole.LocalToRemote && isConnected;
+	public bool IsConnected => isConnected;
+	public bool IsRemoteProxy => role == OnlinePlayerRole.RemoteToLocal;
 
 	public void Initialize(Match match, int playerIndex, OnlinePlayerRole role, PlayerLocator locator)
 	{
@@ -141,6 +143,11 @@ public class OnlinePlayer : MatchPlayer
 				break;
 				case MatchActionType.RequestScoring:
 					Match.ReceiveRequestScoring(PlayerIndex);
+					succeed = true;
+					shouldNotify = false;
+					break;
+				case MatchActionType.RejectScoring:
+					Match.ReceiveRejectScoring(PlayerIndex);
 					succeed = true;
 					shouldNotify = false;
 					break;

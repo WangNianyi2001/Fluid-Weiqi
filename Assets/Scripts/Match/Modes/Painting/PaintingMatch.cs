@@ -2,9 +2,12 @@ using UnityEngine;
 
 public class PaintingMatch : Match
 {
+	const float ShrinkSyncIntervalSeconds = 0.1f;
+
 	PaintingMatchModeConfig modeConfig;
 	float pendingShrinkMargin;
 	float lastShrinkSampleTime = -1f;
+	float nextShrinkSyncTime;
 	float lastPlacementTime = -1f;
 	float nextAutoScoringSampleTime;
 	bool autoScoringArmed;
@@ -35,14 +38,12 @@ public class PaintingMatch : Match
 
 	protected override void OnPlayerMoveAccepted(int playerIndex)
 	{
-		AccumulateShrinkByElapsedTime();
+		// Painting mode shrink is time-driven in Update, not move-driven.
 	}
 
 	protected override float GetShrinkDeltaMarginForAcceptedMove()
 	{
-		float delta = Mathf.Max(0f, pendingShrinkMargin);
-		pendingShrinkMargin = 0f;
-		return delta;
+		return 0f;
 	}
 
 	protected override void BeginMoveWindow()
@@ -81,6 +82,47 @@ public class PaintingMatch : Match
 		pendingShrinkMargin += elapsed * shrinkSpeedPerSecond;
 	}
 
+	void TickTimeDrivenShrink()
+	{
+		if(!Rule.useShrinking || IsEnded || Board.Current == null || Board.Current.State == null)
+			return;
+
+		AccumulateShrinkByElapsedTime();
+		if(pendingShrinkMargin <= 0f)
+			return;
+
+		bool hasAuthority = Lobby.Current == null || !Lobby.Current.IsOnline || Lobby.Current.IsHost;
+		if(!hasAuthority)
+		{
+			pendingShrinkMargin = 0f;
+			return;
+		}
+
+		float delta = pendingShrinkMargin;
+		pendingShrinkMargin = 0f;
+
+		Board board = Board.Current;
+		BoardState shrunkState = board.TryShrink(board.State, delta);
+		if(shrunkState == null)
+		{
+			EndMatch();
+			BroadcastSnapshotToClientsForSystemEvent();
+			return;
+		}
+
+		board.SetState(shrunkState);
+		onStateChanged?.Invoke();
+
+		if(Lobby.Current != null && Lobby.Current.IsOnline && Lobby.Current.IsHost)
+		{
+			if(Time.unscaledTime >= nextShrinkSyncTime)
+			{
+				BroadcastSnapshotToClientsForSystemEvent();
+				nextShrinkSyncTime = Time.unscaledTime + ShrinkSyncIntervalSeconds;
+			}
+		}
+	}
+
 	protected override void OnPass()
 	{
 		// Painting mode does not use pass to advance turn or end the match.
@@ -96,6 +138,10 @@ public class PaintingMatch : Match
 	protected void Update()
 	{
 		if(IsEnded || Board.Current == null || Board.Current.State == null)
+			return;
+
+		TickTimeDrivenShrink();
+		if(IsEnded)
 			return;
 
 		bool canTriggerEnd = Lobby.Current == null || !Lobby.Current.IsOnline || Lobby.Current.IsHost;

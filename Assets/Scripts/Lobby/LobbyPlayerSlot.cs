@@ -27,7 +27,7 @@ public class LobbyPlayerSlot : MonoBehaviour
 
 	public PlayerDescriptor Descriptor { get; set; }
 	int Index => Descriptor?.Index ?? -1;
-	readonly List<PlayerType> typeOptions = new() { PlayerType.Local, PlayerType.Ai };
+	readonly List<PlayerType> typeOptions = new();
 
 	[SerializeField] Graphic colorGraphic;
 	[SerializeField] Dropdown typeDropdown;
@@ -48,9 +48,22 @@ public class LobbyPlayerSlot : MonoBehaviour
 		}
 
 		if(Lobby.Current.IsOnline)
+		{
+			typeOptions.Add(PlayerType.Ai);
 			typeOptions.Add(PlayerType.Online);
+			if(Descriptor.isHost)
+				typeOptions.Insert(0, PlayerType.Local);
+		}
+		else
+		{
+			typeOptions.Add(PlayerType.Local);
+			typeOptions.Add(PlayerType.Ai);
+		}
 		typeDropdown.options = typeOptions.Select(t => new Dropdown.OptionData(t.ToLocalizedString())).ToList();
-		typeDropdown.value = typeOptions.IndexOf(Descriptor.type);
+		int typeIndex = typeOptions.IndexOf(Descriptor.type);
+		if(typeIndex < 0)
+			typeIndex = 0;
+		typeDropdown.value = typeIndex;
 
 		RefreshColorDropdown();
 		colorGraphic.color = Descriptor.color;
@@ -98,9 +111,15 @@ public class LobbyPlayerSlot : MonoBehaviour
 		}
 
 		aiDropdown.options = aiOptions.Select(a => new Dropdown.OptionData(a.AiName)).ToList();
-		int selected = string.IsNullOrWhiteSpace(Descriptor?.aiId)
-			? 0
-			: Mathf.Max(0, aiOptions.FindIndex(a => a.AiId == Descriptor.aiId));
+		aiDropdown.interactable = aiOptions.Count > 0 && (Lobby.Current?.IsHost ?? false);
+
+		int selected = 0;
+		if(!string.IsNullOrWhiteSpace(Descriptor?.aiId))
+		{
+			int matchedIndex = aiOptions.FindIndex(a => a.AiId == Descriptor.aiId);
+			if(matchedIndex >= 0)
+				selected = matchedIndex;
+		}
 		aiDropdown.SetValueWithoutNotify(selected);
 	}
 
@@ -149,5 +168,15 @@ public class LobbyPlayerSlot : MonoBehaviour
 	public void OnRemoveButtonClicked()
 	{
 		HostLobby.Current?.RemovePlayer(Index);
+	}
+
+	public void OnMoveUpButtonClicked()
+	{
+		HostLobby.Current?.MovePlayerUp(Index);
+	}
+
+	public void OnMoveDownButtonClicked()
+	{
+		HostLobby.Current?.MovePlayerDown(Index);
 	}
 }

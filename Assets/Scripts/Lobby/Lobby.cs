@@ -26,6 +26,13 @@ public enum PlayerType
 	Local, Ai, Online
 }
 
+public enum LobbyMatchEndReason
+{
+	Unknown,
+	HostEnded,
+	ConnectionLost,
+}
+
 [System.Serializable]
 public struct PlayerLocator
 {
@@ -137,6 +144,7 @@ public abstract class Lobby
 	#region Status
 	public bool IsHost => this is HostLobby;
 	public bool IsOnline => Visibility != LobbyVisibility.Local;
+	public LobbyMatchEndReason LastMatchEndReason { get; protected set; } = LobbyMatchEndReason.Unknown;
 
 	public Action OnDismissed;
 	public Action OnStartingMatch;
@@ -181,25 +189,14 @@ public abstract class Lobby
 	public abstract MatchRule MatchRule { get; }
 	public Action OnMatchRuleChanged;
 
-	public bool ValidateStartingCondition(out string errorMessage)
+	public bool ValidateStartingCondition(out string errorMessage, out List<string> warningMessages)
 	{
 		errorMessage = null;
+		warningMessages = new List<string>();
 
 		if(Players == null || Players.Count < 2)
 		{
 			errorMessage = "至少需要 2 名玩家才能开始对局。";
-			return false;
-		}
-
-		if(GameManager.Instance == null)
-		{
-			errorMessage = "GameManager 未初始化。";
-			return false;
-		}
-
-		if(string.IsNullOrWhiteSpace(MatchRule.modeId))
-		{
-			errorMessage = "未设置对局模式。";
 			return false;
 		}
 
@@ -238,9 +235,13 @@ public abstract class Lobby
 
 			if(!aiConfig.SupportsMode(MatchRule.modeId))
 			{
-				errorMessage = $"AI '{aiConfig.AiName}' 不支持模式 '{MatchRule.modeId}'。";
+				errorMessage = $"AI “{aiConfig.AiName} 不支持当前模式。";
 				return false;
 			}
+		}
+
+		if(MatchRule.stoneHardness > 0.75f) {
+			warningMessages.Add("棋子硬度过高可能导致奇怪的游戏体验。");
 		}
 
 		return true;
