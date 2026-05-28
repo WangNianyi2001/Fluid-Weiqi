@@ -22,7 +22,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 425420361965232191, guid: 024109d7966e0fb44be6c08a0b472633, type: 3}
       propertyPath: m_PreferredHeight
-      value: 80
+      value: 60
       objectReference: {fileID: 0}
     - target: {fileID: 2078970952768549086, guid: 024109d7966e0fb44be6c08a0b472633, type: 3}
       propertyPath: m_FontData.m_MinSize
@@ -34,7 +34,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3018558963916145523, guid: 024109d7966e0fb44be6c08a0b472633, type: 3}
       propertyPath: m_Name
-      value: Traditional Game Ending Button
+      value: Game Ending Button
       objectReference: {fileID: 0}
     - target: {fileID: 3759286114407619230, guid: 024109d7966e0fb44be6c08a0b472633, type: 3}
       propertyPath: m_Pivot.x
@@ -66,7 +66,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3759286114407619230, guid: 024109d7966e0fb44be6c08a0b472633, type: 3}
       propertyPath: m_SizeDelta.y
-      value: 100
+      value: 80
       objectReference: {fileID: 0}
     - target: {fileID: 3759286114407619230, guid: 024109d7966e0fb44be6c08a0b472633, type: 3}
       propertyPath: m_LocalPosition.x

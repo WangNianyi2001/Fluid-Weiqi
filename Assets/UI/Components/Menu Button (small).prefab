@@ -9,20 +9,24 @@ PrefabInstance:
     m_TransformParent: {fileID: 0}
     m_Modifications:
     - target: {fileID: 425420361965232191, guid: 024109d7966e0fb44be6c08a0b472633, type: 3}
+      propertyPath: m_PreferredWidth
+      value: 250
+      objectReference: {fileID: 0}
+    - target: {fileID: 425420361965232191, guid: 024109d7966e0fb44be6c08a0b472633, type: 3}
       propertyPath: m_PreferredHeight
-      value: 80
+      value: 60
       objectReference: {fileID: 0}
     - target: {fileID: 2078970952768549086, guid: 024109d7966e0fb44be6c08a0b472633, type: 3}
       propertyPath: m_FontData.m_MinSize
-      value: 4
+      value: 3
       objectReference: {fileID: 0}
     - target: {fileID: 2078970952768549086, guid: 024109d7966e0fb44be6c08a0b472633, type: 3}
       propertyPath: m_FontData.m_FontSize
-      value: 40
+      value: 36
       objectReference: {fileID: 0}
     - target: {fileID: 3018558963916145523, guid: 024109d7966e0fb44be6c08a0b472633, type: 3}
       propertyPath: m_Name
-      value: Menu Button - small
+      value: Menu Button (small)
       objectReference: {fileID: 0}
     - target: {fileID: 3759286114407619230, guid: 024109d7966e0fb44be6c08a0b472633, type: 3}
       propertyPath: m_Pivot.x
@@ -115,7 +119,7 @@ PrefabInstance:
     - target: {fileID: 8304778915724780400, guid: 024109d7966e0fb44be6c08a0b472633, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 20171598325de8141a7c0b11a59d4ce6, type: 3}
+      objectReference: {fileID: 21300000, guid: 5fbc45c4a0580594c86976138a0235e8, type: 3}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
