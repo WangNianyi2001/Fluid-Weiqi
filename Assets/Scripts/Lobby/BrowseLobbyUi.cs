@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using System.Collections;
 using System.Collections.Generic;
 
 public class BrowseLobbyUi : MonoBehaviour
@@ -100,7 +101,7 @@ public class BrowseLobbyUi : MonoBehaviour
 			return;
 
 		isLoading = true;
-		SetInteractable(false);
+		StartCoroutine(CoSetInteractableNextFrame(false));
 
 		if(Service == null)
 		{
@@ -196,6 +197,12 @@ public class BrowseLobbyUi : MonoBehaviour
 		}
 		else
 			SetInteractable(true);
+	}
+
+	IEnumerator CoSetInteractableNextFrame(bool value)
+	{
+		yield return null;
+		SetInteractable(value);
 	}
 
 	void SetInteractable(bool value)
